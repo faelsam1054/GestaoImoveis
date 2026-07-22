@@ -16,6 +16,7 @@ import { formatarCompetencia, formatarData, formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -254,13 +255,10 @@ export function PagamentosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="valorPrevisto">Valor</Label>
-                <Input
+                <CurrencyInput
                   id="valorPrevisto"
-                  type="number"
-                  min={0}
-                  step="0.01"
                   value={formAvulso.valorPrevisto}
-                  onChange={(e) => setFormAvulso({ ...formAvulso, valorPrevisto: Number(e.target.value) })}
+                  onValueChange={(v) => setFormAvulso({ ...formAvulso, valorPrevisto: v ?? 0 })}
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -317,13 +315,10 @@ export function PagamentosPage() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="valorPago">Valor pago</Label>
-              <Input
+              <CurrencyInput
                 id="valorPago"
-                type="number"
-                min={0}
-                step="0.01"
                 value={formPagar.valorPago}
-                onChange={(e) => setFormPagar({ ...formPagar, valorPago: Number(e.target.value) })}
+                onValueChange={(v) => setFormPagar({ ...formPagar, valorPago: v ?? 0 })}
               />
             </div>
             <div className="flex flex-col gap-2">

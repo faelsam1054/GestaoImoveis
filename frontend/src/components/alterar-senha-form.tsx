@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, mensagemErro } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 
 export function AlterarSenhaForm() {
@@ -40,17 +40,16 @@ export function AlterarSenhaForm() {
     <div className="flex max-w-md flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="senhaAtual">Senha atual</Label>
-        <Input id="senhaAtual" type="password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} />
+        <PasswordInput id="senhaAtual" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} />
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="novaSenha">Nova senha</Label>
-        <Input id="novaSenha" type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+        <PasswordInput id="novaSenha" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="confirmacao">Confirme a nova senha</Label>
-        <Input
+        <PasswordInput
           id="confirmacao"
-          type="password"
           value={confirmacao}
           onChange={(e) => setConfirmacao(e.target.value)}
         />

@@ -9,6 +9,7 @@ export interface ContratoInput {
   diaVencimento: number;
   valorAluguel: number;
   valorCaucao?: number;
+  caucaoNumeroParcelas?: 1 | 2 | 3;
 }
 
 export type RenovarContratoInput = Omit<ContratoInput, "imovelId" | "inquilinoId">;
@@ -46,5 +47,19 @@ export async function rescindirContrato(id: string): Promise<Contrato> {
 
 export async function renovarContrato(id: string, input: RenovarContratoInput): Promise<Contrato> {
   const { data } = await api.post(`/contratos/${id}/renovar`, input);
+  return data;
+}
+
+export async function enviarContratoAssinado(id: string, arquivo: File): Promise<Contrato> {
+  const form = new FormData();
+  form.append("arquivo", arquivo);
+  const { data } = await api.post(`/contratos/${id}/contrato-assinado`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function removerContratoAssinado(id: string): Promise<Contrato> {
+  const { data } = await api.delete(`/contratos/${id}/contrato-assinado`);
   return data;
 }

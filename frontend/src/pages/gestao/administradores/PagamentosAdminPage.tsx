@@ -16,6 +16,7 @@ import { formatarCompetencia, formatarData, formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -220,13 +221,10 @@ export function PagamentosAdminPage() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="valorPagoAdmin">Valor pago</Label>
-              <Input
+              <CurrencyInput
                 id="valorPagoAdmin"
-                type="number"
-                min={0}
-                step="0.01"
                 value={formPagar.valorPago}
-                onChange={(e) => setFormPagar({ ...formPagar, valorPago: Number(e.target.value) })}
+                onValueChange={(v) => setFormPagar({ ...formPagar, valorPago: v ?? 0 })}
               />
             </div>
             <div className="flex flex-col gap-2">

@@ -5,6 +5,8 @@ import { GestaoLayout } from "@/layouts/GestaoLayout";
 import { InquilinoLayout } from "@/layouts/InquilinoLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { TrocarSenhaPage } from "@/pages/auth/TrocarSenhaPage";
+import { EsqueciSenhaPage } from "@/pages/auth/EsqueciSenhaPage";
+import { RedefinirSenhaPage } from "@/pages/auth/RedefinirSenhaPage";
 import { HomeRedirect } from "@/pages/HomeRedirect";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { DashboardPage } from "@/pages/gestao/dashboard/DashboardPage";
@@ -14,6 +16,7 @@ import { ImoveisPage } from "@/pages/gestao/imoveis/ImoveisPage";
 import { ImovelDetalhePage } from "@/pages/gestao/imoveis/ImovelDetalhePage";
 import { InquilinosPage } from "@/pages/gestao/inquilinos/InquilinosPage";
 import { ContratosPage } from "@/pages/gestao/contratos/ContratosPage";
+import { ContratoDetalhePage } from "@/pages/gestao/contratos/ContratoDetalhePage";
 import { PagamentosPage } from "@/pages/gestao/pagamentos/PagamentosPage";
 import { ManutencaoPage } from "@/pages/gestao/manutencao/ManutencaoPage";
 import { AdministradoresPage } from "@/pages/gestao/administradores/AdministradoresPage";
@@ -29,6 +32,8 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/esqueci-senha" element={<EsqueciSenhaPage />} />
+      <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/trocar-senha" element={<TrocarSenhaPage />} />
@@ -53,6 +58,7 @@ export function AppRoutes() {
           </Route>
           <Route element={<PermissaoRoute permissao="podeVerContratos" />}>
             <Route path="/contratos" element={<ContratosPage />} />
+            <Route path="/contratos/:id" element={<ContratoDetalhePage />} />
           </Route>
           <Route element={<PermissaoRoute permissao="podeVerPagamentos" />}>
             <Route path="/pagamentos" element={<PagamentosPage />} />

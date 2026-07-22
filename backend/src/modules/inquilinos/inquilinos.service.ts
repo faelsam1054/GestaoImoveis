@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
-import { criarUsuarioComSenhaTemporaria } from "../usuarios/usuarios.service";
+import { criarUsuarioComSenhaTemporaria, resetarSenhaUsuario } from "../usuarios/usuarios.service";
 import type { criarInquilinoSchema, atualizarInquilinoSchema } from "./inquilinos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -10,6 +10,7 @@ interface FiltrosInquilino {
   busca?: string;
   page?: string;
   pageSize?: string;
+  apenasExcluidos?: boolean;
 }
 
 const includeUsuario = {
@@ -19,15 +20,18 @@ const includeUsuario = {
 export async function listar(filtros: FiltrosInquilino) {
   const paginacao = parsePaginacao(filtros);
 
-  const where: Prisma.InquilinoWhereInput = filtros.busca
-    ? {
-        OR: [
-          { cpf: { contains: filtros.busca } },
-          { usuario: { nome: { contains: filtros.busca } } },
-          { usuario: { email: { contains: filtros.busca } } },
-        ],
-      }
-    : {};
+  const where: Prisma.InquilinoWhereInput = {
+    excluidoEm: filtros.apenasExcluidos ? { not: null } : null,
+    ...(filtros.busca
+      ? {
+          OR: [
+            { cpf: { contains: filtros.busca } },
+            { usuario: { nome: { contains: filtros.busca } } },
+            { usuario: { email: { contains: filtros.busca } } },
+          ],
+        }
+      : {}),
+  };
 
   const [dados, total] = await Promise.all([
     prisma.inquilino.findMany({
@@ -112,4 +116,35 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarInquil
 export async function desativar(id: string) {
   const inquilino = await buscarPorIdOuFalhar(id);
   await prisma.usuario.update({ where: { id: inquilino.usuarioId }, data: { ativo: false } });
+}
+
+export async function ativar(id: string) {
+  const inquilino = await buscarPorIdOuFalhar(id);
+  if (inquilino.excluidoEm) throw new AppError("Nao e possivel ativar um inquilino excluido", 409);
+  await prisma.usuario.update({ where: { id: inquilino.usuarioId }, data: { ativo: true } });
+}
+
+export async function excluir(id: string) {
+  const inquilino = await buscarPorIdOuFalhar(id);
+  if (inquilino.excluidoEm) throw new AppError("Este inquilino ja esta excluido", 409);
+  const temContratoAtivo = inquilino.contratos.some((c) => c.status === "ativo");
+  if (temContratoAtivo) {
+    throw new AppError("Nao e possivel excluir um inquilino com contrato ativo. Encerre o contrato primeiro.", 409);
+  }
+  await prisma.$transaction([
+    prisma.inquilino.update({ where: { id }, data: { excluidoEm: new Date() } }),
+    prisma.usuario.update({ where: { id: inquilino.usuarioId }, data: { ativo: false } }),
+  ]);
+}
+
+export async function restaurar(id: string) {
+  const inquilino = await buscarPorIdOuFalhar(id);
+  if (!inquilino.excluidoEm) throw new AppError("Este inquilino nao esta excluido", 409);
+  await prisma.inquilino.update({ where: { id }, data: { excluidoEm: null } });
+}
+
+export async function resetarSenha(id: string) {
+  const inquilino = await buscarPorIdOuFalhar(id);
+  const { senhaTemporaria } = await resetarSenhaUsuario(inquilino.usuarioId);
+  return { email: inquilino.usuario.email, senhaTemporaria };
 }

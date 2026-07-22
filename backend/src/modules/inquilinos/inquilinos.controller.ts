@@ -57,3 +57,52 @@ export const desativar = asyncHandler(async (req, res) => {
   });
   res.status(204).send();
 });
+
+export const ativar = asyncHandler(async (req, res) => {
+  await service.ativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "ATIVAR_INQUILINO",
+    entidade: "Inquilino",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const excluir = asyncHandler(async (req, res) => {
+  await service.excluir(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "EXCLUIR_INQUILINO",
+    entidade: "Inquilino",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const restaurar = asyncHandler(async (req, res) => {
+  await service.restaurar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RESTAURAR_INQUILINO",
+    entidade: "Inquilino",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const resetarSenha = asyncHandler(async (req, res) => {
+  const credenciaisTemporarias = await service.resetarSenha(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RESET_SENHA_INQUILINO",
+    entidade: "Inquilino",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  // A senha temporaria so e exposta nesta resposta (nao fica em texto claro no banco).
+  res.json({ credenciaisTemporarias });
+});

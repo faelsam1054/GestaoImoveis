@@ -9,6 +9,7 @@ export const criarContratoSchema = z
     diaVencimento: z.number().int().min(1).max(28),
     valorAluguel: z.number().positive(),
     valorCaucao: z.number().nonnegative().optional(),
+    caucaoNumeroParcelas: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
   })
   .refine((d) => d.dataFim > d.dataInicio, {
     message: "dataFim deve ser posterior a dataInicio",
@@ -22,6 +23,7 @@ export const renovarContratoSchema = z
     diaVencimento: z.number().int().min(1).max(28),
     valorAluguel: z.number().positive(),
     valorCaucao: z.number().nonnegative().optional(),
+    caucaoNumeroParcelas: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
   })
   .refine((d) => d.dataFim > d.dataInicio, {
     message: "dataFim deve ser posterior a dataInicio",

@@ -12,5 +12,9 @@ router.get("/:id", authorizePermissao("podeVerInquilinos"), controller.detalhar)
 router.post("/", authorizePermissao("podeEditarInquilinos"), controller.criar);
 router.put("/:id", authorizePermissao("podeEditarInquilinos"), controller.atualizar);
 router.delete("/:id", requireRole("proprietario"), controller.desativar);
+router.patch("/:id/ativar", requireRole("proprietario"), controller.ativar);
+router.patch("/:id/excluir", requireRole("proprietario"), controller.excluir);
+router.patch("/:id/restaurar", requireRole("proprietario"), controller.restaurar);
+router.patch("/:id/resetar-senha", requireRole("proprietario"), controller.resetarSenha);
 
 export default router;

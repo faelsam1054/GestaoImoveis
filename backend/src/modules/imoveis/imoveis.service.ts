@@ -11,14 +11,19 @@ interface FiltrosImovel {
   busca?: string;
   page?: string;
   pageSize?: string;
+  apenasExcluidos?: boolean;
+  // null = sem restricao (proprietario); array = ids permitidos (administrador vinculado)
+  imovelIdsPermitidos?: string[] | null;
 }
 
 export async function listar(filtros: FiltrosImovel) {
   const paginacao = parsePaginacao(filtros);
 
   const where: Prisma.ImovelWhereInput = {
+    id: filtros.imovelIdsPermitidos ? { in: filtros.imovelIdsPermitidos } : undefined,
     status: filtros.status,
     tipoImovelId: filtros.tipoImovelId,
+    excluidoEm: filtros.apenasExcluidos ? { not: null } : null,
     ...(filtros.busca
       ? {
           OR: [
@@ -90,15 +95,35 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarImovel
 }
 
 export async function remover(id: string) {
-  const imovel = await prisma.imovel.findUnique({
-    where: { id },
-    include: { _count: { select: { contratos: true } } },
-  });
-  if (!imovel) throw new AppError("Imovel nao encontrado", 404);
-  if (imovel._count.contratos > 0) {
-    throw new AppError("Nao e possivel excluir um imovel que ja possui contratos vinculados", 409);
+  const imovel = await buscarPorIdOuFalhar(id);
+  if (imovel.excluidoEm) throw new AppError("Este imovel ja esta excluido", 409);
+  if (imovel.status === "alugado") {
+    throw new AppError("Nao e possivel excluir um imovel com contrato ativo. Encerre o contrato primeiro.", 409);
   }
-  await prisma.imovel.delete({ where: { id } });
+  await prisma.imovel.update({ where: { id }, data: { excluidoEm: new Date() } });
+}
+
+export async function restaurar(id: string) {
+  const imovel = await buscarPorIdOuFalhar(id);
+  if (!imovel.excluidoEm) throw new AppError("Este imovel nao esta excluido", 409);
+  await prisma.imovel.update({ where: { id }, data: { excluidoEm: null } });
+}
+
+export async function ativar(id: string) {
+  const imovel = await buscarPorIdOuFalhar(id);
+  if (imovel.excluidoEm) throw new AppError("Nao e possivel ativar um imovel excluido", 409);
+  if (imovel.status !== "inativo") throw new AppError("Somente imoveis inativos podem ser ativados", 409);
+  return prisma.imovel.update({ where: { id }, data: { status: "vago" } });
+}
+
+export async function desativar(id: string) {
+  const imovel = await buscarPorIdOuFalhar(id);
+  if (imovel.excluidoEm) throw new AppError("Nao e possivel desativar um imovel excluido", 409);
+  if (imovel.status === "alugado") {
+    throw new AppError("Nao e possivel desativar um imovel com contrato ativo. Encerre o contrato primeiro.", 409);
+  }
+  if (imovel.status === "inativo") throw new AppError("Este imovel ja esta inativo", 409);
+  return prisma.imovel.update({ where: { id }, data: { status: "inativo" } });
 }
 
 export async function adicionarFoto(imovelId: string, url: string) {

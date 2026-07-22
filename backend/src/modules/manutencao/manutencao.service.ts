@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { ORDEM_STATUS_MANUTENCAO, type StatusManutencao } from "../../constants/dominio";
+import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import type {
   criarGastoManutencaoSchema,
   atualizarGastoManutencaoSchema,
@@ -16,13 +17,14 @@ interface FiltrosManutencao {
   categoria?: string;
   page?: string;
   pageSize?: string;
+  imovelIdsPermitidos?: string[] | null;
 }
 
 export async function listar(filtros: FiltrosManutencao) {
   const paginacao = parsePaginacao(filtros);
 
   const where: Prisma.GastoManutencaoWhereInput = {
-    imovelId: filtros.imovelId,
+    imovelId: combinarFiltroImovel(filtros.imovelId, filtros.imovelIdsPermitidos ?? null),
     status: filtros.status,
     categoria: filtros.categoria,
   };

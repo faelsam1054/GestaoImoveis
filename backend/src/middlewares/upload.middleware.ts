@@ -21,21 +21,30 @@ function storageParaSubpasta(subpasta: string) {
   });
 }
 
-function fileFilter(_req: Request, file: Express.Multer.File, cb: FileFilterCallback) {
-  if (TIPOS_PERMITIDOS.has(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new AppError("Tipo de arquivo nao permitido. Envie imagem (jpg/png/webp) ou PDF.", 400));
-  }
+function criarFileFilter(tiposPermitidos: Set<string>, mensagemErro: string) {
+  return (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+    if (tiposPermitidos.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError(mensagemErro, 400));
+    }
+  };
 }
 
 // subpasta: "imoveis", "manutencao", "pagamentos-admin" etc. Usada tanto para
 // organizar o disco quanto para montar a URL publica servida em /uploads/<subpasta>.
-export function criarUploadMiddleware(subpasta: string) {
+// tiposPermitidos: por padrao aceita imagem+PDF; passe um subconjunto (ex: so PDF)
+// para restringir o upload em rotas especificas.
+export function criarUploadMiddleware(subpasta: string, tiposPermitidos: Set<string> = TIPOS_PERMITIDOS) {
+  const somentePdf = tiposPermitidos.size === 1 && tiposPermitidos.has("application/pdf");
+  const mensagemErro = somentePdf
+    ? "Tipo de arquivo nao permitido. Envie um PDF."
+    : "Tipo de arquivo nao permitido. Envie imagem (jpg/png/webp) ou PDF.";
+
   return multer({
     storage: storageParaSubpasta(subpasta),
     limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter,
+    fileFilter: criarFileFilter(tiposPermitidos, mensagemErro),
   });
 }
 

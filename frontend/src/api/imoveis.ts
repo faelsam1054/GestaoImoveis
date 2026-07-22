@@ -20,6 +20,8 @@ export interface FiltrosImovel {
   tipoImovelId?: string;
   busca?: string;
   page?: number;
+  pageSize?: number;
+  apenasExcluidos?: boolean;
 }
 
 export async function listarImoveis(filtros: FiltrosImovel = {}): Promise<Paginado<Imovel>> {
@@ -44,6 +46,20 @@ export async function atualizarImovel(id: string, input: Partial<ImovelInput>): 
 
 export async function removerImovel(id: string): Promise<void> {
   await api.delete(`/imoveis/${id}`);
+}
+
+export async function restaurarImovel(id: string): Promise<void> {
+  await api.patch(`/imoveis/${id}/restaurar`);
+}
+
+export async function ativarImovel(id: string): Promise<Imovel> {
+  const { data } = await api.patch(`/imoveis/${id}/ativar`);
+  return data;
+}
+
+export async function desativarImovel(id: string): Promise<Imovel> {
+  const { data } = await api.patch(`/imoveis/${id}/desativar`);
+  return data;
 }
 
 export async function adicionarFotoImovel(id: string, arquivo: File) {

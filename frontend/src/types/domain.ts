@@ -14,6 +14,8 @@ export const CATEGORIA_MANUTENCAO = [
 ] as const;
 export const STATUS_MANUTENCAO = ["orcamento", "aprovado", "executado", "pago"] as const;
 export const FORMA_PAGAMENTO_ADMIN = ["pix", "transferencia", "dinheiro"] as const;
+export const FORMA_PAGAMENTO_CAUCAO = ["pix", "transferencia", "dinheiro", "outros"] as const;
+export const STATUS_CAUCAO_PARCELA = ["pendente", "pago", "atrasado"] as const;
 
 export type StatusImovel = (typeof STATUS_IMOVEL)[number];
 export type StatusContrato = (typeof STATUS_CONTRATO)[number];
@@ -23,6 +25,8 @@ export type FormaPagamento = (typeof FORMA_PAGAMENTO)[number];
 export type CategoriaManutencao = (typeof CATEGORIA_MANUTENCAO)[number];
 export type StatusManutencao = (typeof STATUS_MANUTENCAO)[number];
 export type FormaPagamentoAdmin = (typeof FORMA_PAGAMENTO_ADMIN)[number];
+export type FormaPagamentoCaucao = (typeof FORMA_PAGAMENTO_CAUCAO)[number];
+export type StatusCaucaoParcela = (typeof STATUS_CAUCAO_PARCELA)[number];
 
 export interface Paginado<T> {
   dados: T[];
@@ -56,6 +60,7 @@ export interface Imovel {
   valorAluguelBase: number;
   descricao: string | null;
   status: StatusImovel;
+  excluidoEm: string | null;
   fotos?: ImovelFoto[];
   gastoTotalManutencao?: number;
   contratos?: Contrato[];
@@ -78,6 +83,7 @@ export interface Inquilino {
   telefone: string;
   contatoEmergenciaNome: string | null;
   contatoEmergenciaTelefone: string | null;
+  excluidoEm: string | null;
   contratos?: Contrato[];
 }
 
@@ -92,10 +98,26 @@ export interface Contrato {
   diaVencimento: number;
   valorAluguel: number;
   valorCaucao: number | null;
+  caucaoNumeroParcelas: number;
   status: StatusContrato;
   contratoAnteriorId: string | null;
   arquivoPdfUrl: string | null;
+  contratoAssinadoUrl: string | null;
   pagamentos?: Pagamento[];
+  caucaoParcelas?: CaucaoParcela[];
+}
+
+export interface CaucaoParcela {
+  id: string;
+  contratoId: string;
+  numeroParcela: number;
+  valorParcela: number;
+  dataVencimento: string;
+  dataPagamento: string | null;
+  status: StatusCaucaoParcela;
+  formaPagamento: FormaPagamentoCaucao | null;
+  observacoes: string | null;
+  reciboPdfUrl: string | null;
 }
 
 export interface Pagamento {
@@ -153,6 +175,7 @@ export interface Administrador {
   email: string;
   ativo: boolean;
   permissaoAdministrador: PermissaoAdministrador | null;
+  totalImoveisVinculados?: number;
 }
 
 export interface PagamentoAdministrador {

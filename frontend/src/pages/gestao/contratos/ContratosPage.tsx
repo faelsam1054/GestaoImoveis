@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import {
@@ -8,7 +9,6 @@ import {
   encerrarContrato,
   rescindirContrato,
   renovarContrato,
-  detalharContrato,
   type ContratoInput,
   type RenovarContratoInput,
 } from "@/api/contratos";
@@ -17,10 +17,12 @@ import { listarInquilinos } from "@/api/inquilinos";
 import { useAuth } from "@/contexts/AuthContext";
 import { STATUS_CONTRATO, type Contrato } from "@/types/domain";
 import { formatarData, formatarMoeda } from "@/lib/format";
+import { calcularParcelasCaucaoPreview } from "@/lib/caucao";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +45,73 @@ const FORM_VAZIO: ContratoInput = {
   diaVencimento: 5,
   valorAluguel: 0,
   valorCaucao: undefined,
+  caucaoNumeroParcelas: 1,
 };
+
+function SeletorParcelasCaucao({
+  valor,
+  onChange,
+}: {
+  valor: 1 | 2 | 3 | undefined;
+  onChange: (v: 1 | 2 | 3) => void;
+}) {
+  return (
+    <Select value={String(valor ?? 1)} onValueChange={(v) => onChange(Number(v) as 1 | 2 | 3)}>
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="1">1x (à vista)</SelectItem>
+        <SelectItem value="2">2x</SelectItem>
+        <SelectItem value="3">3x</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function PreviewParcelasCaucao({
+  valorCaucao,
+  numeroParcelas,
+  dataInicio,
+}: {
+  valorCaucao: number | undefined;
+  numeroParcelas: number;
+  dataInicio: string;
+}) {
+  if (numeroParcelas <= 1) return null;
+  const parcelas = calcularParcelasCaucaoPreview(valorCaucao, numeroParcelas, dataInicio);
+  if (parcelas.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Informe a data de início e o valor da caução para pré-visualizar as parcelas.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Parcela</TableHead>
+            <TableHead>Valor</TableHead>
+            <TableHead>Vencimento sugerido</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {parcelas.map((p) => (
+            <TableRow key={p.numeroParcela}>
+              <TableCell>
+                {p.numeroParcela} de {numeroParcelas}
+              </TableCell>
+              <TableCell>{formatarMoeda(p.valorParcela)}</TableCell>
+              <TableCell>{formatarData(p.dataVencimento)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
 export function ContratosPage() {
   const { usuario } = useAuth();
@@ -62,10 +130,10 @@ export function ContratosPage() {
     diaVencimento: 5,
     valorAluguel: 0,
     valorCaucao: undefined,
+    caucaoNumeroParcelas: 1,
   });
 
   const [confirmacao, setConfirmacao] = useState<{ contrato: Contrato; acao: "encerrar" | "rescindir" } | null>(null);
-  const [verPagamentosId, setVerPagamentosId] = useState<string | null>(null);
 
   const { data: resultado, isLoading } = useQuery({
     queryKey: ["contratos", statusFiltro],
@@ -82,12 +150,6 @@ export function ContratosPage() {
     queryKey: ["inquilinos", ""],
     queryFn: () => listarInquilinos(),
     enabled: dialogAberto,
-  });
-
-  const { data: contratoDetalhe } = useQuery({
-    queryKey: ["contratos", verPagamentosId],
-    queryFn: () => detalharContrato(verPagamentosId!),
-    enabled: Boolean(verPagamentosId),
   });
 
   function invalidar() {
@@ -151,6 +213,7 @@ export function ContratosPage() {
       diaVencimento: contrato.diaVencimento,
       valorAluguel: contrato.valorAluguel,
       valorCaucao: contrato.valorCaucao ?? undefined,
+      caucaoNumeroParcelas: (contrato.caucaoNumeroParcelas ?? 1) as 1 | 2 | 3,
     });
     setErro(null);
   }
@@ -230,8 +293,8 @@ export function ContratosPage() {
                   <StatusBadge status={contrato.status} />
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" onClick={() => setVerPagamentosId(contrato.id)}>
-                    Pagamentos
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to={`/contratos/${contrato.id}`}>Detalhes</Link>
                   </Button>
                   {podeEditar && contrato.status === "ativo" && (
                     <>
@@ -294,11 +357,13 @@ export function ContratosPage() {
                   <SelectValue placeholder="Selecione o inquilino" />
                 </SelectTrigger>
                 <SelectContent>
-                  {inquilinosResultado?.dados.map((inquilino) => (
-                    <SelectItem key={inquilino.id} value={inquilino.id}>
-                      {inquilino.usuario?.nome}
-                    </SelectItem>
-                  ))}
+                  {inquilinosResultado?.dados
+                    .filter((inquilino) => inquilino.usuario?.ativo)
+                    .map((inquilino) => (
+                      <SelectItem key={inquilino.id} value={inquilino.id}>
+                        {inquilino.usuario?.nome}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -336,29 +401,35 @@ export function ContratosPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="valorAluguel">Valor do aluguel</Label>
-                <Input
+                <CurrencyInput
                   id="valorAluguel"
-                  type="number"
-                  min={0}
-                  step="0.01"
                   value={form.valorAluguel}
-                  onChange={(e) => setForm({ ...form, valorAluguel: Number(e.target.value) })}
+                  onValueChange={(v) => setForm({ ...form, valorAluguel: v ?? 0 })}
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="valorCaucao">Caução (opcional)</Label>
-                <Input
+                <CurrencyInput
                   id="valorCaucao"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.valorCaucao ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, valorCaucao: e.target.value ? Number(e.target.value) : undefined })
-                  }
+                  value={form.valorCaucao}
+                  onValueChange={(v) => setForm({ ...form, valorCaucao: v })}
                 />
               </div>
             </div>
+            {Boolean(form.valorCaucao) && (
+              <div className="flex flex-col gap-2">
+                <Label>Parcelar caução em</Label>
+                <SeletorParcelasCaucao
+                  valor={form.caucaoNumeroParcelas}
+                  onChange={(v) => setForm({ ...form, caucaoNumeroParcelas: v })}
+                />
+                <PreviewParcelasCaucao
+                  valorCaucao={form.valorCaucao}
+                  numeroParcelas={form.caucaoNumeroParcelas ?? 1}
+                  dataInicio={form.dataInicio}
+                />
+              </div>
+            )}
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>
           <DialogFooter>
@@ -420,15 +491,33 @@ export function ContratosPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Valor do aluguel</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                <CurrencyInput
                   value={formRenovacao.valorAluguel}
-                  onChange={(e) => setFormRenovacao({ ...formRenovacao, valorAluguel: Number(e.target.value) })}
+                  onValueChange={(v) => setFormRenovacao({ ...formRenovacao, valorAluguel: v ?? 0 })}
                 />
               </div>
             </div>
+            <div className="flex flex-col gap-2">
+              <Label>Caução (opcional)</Label>
+              <CurrencyInput
+                value={formRenovacao.valorCaucao}
+                onValueChange={(v) => setFormRenovacao({ ...formRenovacao, valorCaucao: v })}
+              />
+            </div>
+            {Boolean(formRenovacao.valorCaucao) && (
+              <div className="flex flex-col gap-2">
+                <Label>Parcelar caução em</Label>
+                <SeletorParcelasCaucao
+                  valor={formRenovacao.caucaoNumeroParcelas}
+                  onChange={(v) => setFormRenovacao({ ...formRenovacao, caucaoNumeroParcelas: v })}
+                />
+                <PreviewParcelasCaucao
+                  valorCaucao={formRenovacao.valorCaucao}
+                  numeroParcelas={formRenovacao.caucaoNumeroParcelas ?? 1}
+                  dataInicio={formRenovacao.dataInicio}
+                />
+              </div>
+            )}
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>
           <DialogFooter>
@@ -445,39 +534,6 @@ export function ContratosPage() {
               {mutRenovar.isPending ? "Renovando..." : "Renovar"}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Ver pagamentos do contrato */}
-      <Dialog open={Boolean(verPagamentosId)} onOpenChange={(open) => !open && setVerPagamentosId(null)}>
-        <DialogContent className="max-h-[80vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Pagamentos do contrato</DialogTitle>
-          </DialogHeader>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Competência</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead>Valor</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contratoDetalhe?.pagamentos?.map((pagamento) => (
-                <TableRow key={pagamento.id}>
-                  <TableCell>{pagamento.competencia}</TableCell>
-                  <TableCell className="capitalize">{pagamento.tipo}</TableCell>
-                  <TableCell>{formatarData(pagamento.dataVencimento)}</TableCell>
-                  <TableCell>{formatarMoeda(pagamento.valorPrevisto)}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={pagamento.status} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </DialogContent>
       </Dialog>
 

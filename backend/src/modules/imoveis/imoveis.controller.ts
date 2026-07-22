@@ -5,14 +5,23 @@ import * as service from "./imoveis.service";
 import { criarImovelSchema, atualizarImovelSchema, listarImoveisQuerySchema } from "./imoveis.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 import { montarUrlArquivo } from "../../middlewares/upload.middleware";
+import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
+import type { Request } from "express";
+
+async function garantirAcesso(req: Request, imovelId: string) {
+  const permitido = await verificarAcessoAoImovel(req.user!.id, req.user!.role, imovelId);
+  if (!permitido) throw new AppError("Voce nao tem acesso a este imovel", 403);
+}
 
 export const listar = asyncHandler(async (req, res) => {
   const filtros = listarImoveisQuerySchema.parse(req.query);
-  const resultado = await service.listar(filtros);
+  const imovelIdsPermitidos = await obterImovelIdsPermitidos(req.user!.id, req.user!.role);
+  const resultado = await service.listar({ ...filtros, imovelIdsPermitidos });
   res.json(resultado);
 });
 
 export const detalhar = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
   const imovel = await service.detalhar(paramId(req));
   res.json(imovel);
 });
@@ -32,6 +41,7 @@ export const criar = asyncHandler(async (req, res) => {
 });
 
 export const atualizar = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
   const data = atualizarImovelSchema.parse(req.body);
   const antes = await service.buscarPorIdOuFalhar(paramId(req));
   const imovel = await service.atualizar(paramId(req), data);
@@ -59,7 +69,48 @@ export const remover = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+export const restaurar = asyncHandler(async (req, res) => {
+  await service.restaurar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RESTORE_IMOVEL",
+    entidade: "Imovel",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const ativar = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
+  const imovel = await service.ativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "ATIVAR_IMOVEL",
+    entidade: "Imovel",
+    entidadeId: imovel.id,
+    dadosDepois: imovel,
+    ip: getClientIp(req),
+  });
+  res.json(imovel);
+});
+
+export const desativar = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
+  const imovel = await service.desativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DESATIVAR_IMOVEL",
+    entidade: "Imovel",
+    entidadeId: imovel.id,
+    dadosDepois: imovel,
+    ip: getClientIp(req),
+  });
+  res.json(imovel);
+});
+
 export const adicionarFoto = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
   const url = montarUrlArquivo("imoveis", req.file.filename);
   const foto = await service.adicionarFoto(paramId(req), url);
@@ -67,6 +118,7 @@ export const adicionarFoto = asyncHandler(async (req, res) => {
 });
 
 export const removerFoto = asyncHandler(async (req, res) => {
+  await garantirAcesso(req, paramId(req));
   await service.removerFoto(paramId(req), paramId(req, "fotoId"));
   res.status(204).send();
 });

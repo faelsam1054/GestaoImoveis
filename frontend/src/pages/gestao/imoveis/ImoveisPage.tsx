@@ -3,7 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Search } from "lucide-react";
-import { listarImoveis, criarImovel, atualizarImovel, type ImovelInput } from "@/api/imoveis";
+import {
+  listarImoveis,
+  criarImovel,
+  atualizarImovel,
+  removerImovel,
+  restaurarImovel,
+  ativarImovel,
+  desativarImovel,
+  type ImovelInput,
+} from "@/api/imoveis";
 import { listarTiposImovel } from "@/api/tiposImovel";
 import { useAuth } from "@/contexts/AuthContext";
 import { STATUS_IMOVEL, type Imovel } from "@/types/domain";
@@ -11,9 +20,12 @@ import { formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -41,21 +53,25 @@ const FORM_VAZIO: ImovelInput = {
 export function ImoveisPage() {
   const { usuario } = useAuth();
   const podeEditar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeEditarImoveis;
+  const ehProprietario = usuario?.role === "proprietario";
   const queryClient = useQueryClient();
 
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [apenasExcluidos, setApenasExcluidos] = useState(false);
   const [dialogAberto, setDialogAberto] = useState(false);
   const [editando, setEditando] = useState<Imovel | null>(null);
   const [form, setForm] = useState<ImovelInput>(FORM_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState<Imovel | null>(null);
 
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["imoveis", busca, statusFiltro],
+    queryKey: ["imoveis", busca, statusFiltro, apenasExcluidos],
     queryFn: () =>
       listarImoveis({
         busca: busca || undefined,
-        status: statusFiltro === "todos" ? undefined : (statusFiltro as Imovel["status"]),
+        status: apenasExcluidos || statusFiltro === "todos" ? undefined : (statusFiltro as Imovel["status"]),
+        apenasExcluidos: apenasExcluidos || undefined,
       }),
   });
 
@@ -83,6 +99,46 @@ export function ImoveisPage() {
       setDialogAberto(false);
     },
     onError: (err) => setErro(mensagemErro(err)),
+  });
+
+  const mutAtivar = useMutation({
+    mutationFn: (id: string) => ativarImovel(id),
+    onSuccess: async () => {
+      toast.success("Imóvel ativado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutDesativar = useMutation({
+    mutationFn: (id: string) => desativarImovel(id),
+    onSuccess: async () => {
+      toast.success("Imóvel desativado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutExcluir = useMutation({
+    mutationFn: (id: string) => removerImovel(id),
+    onSuccess: async () => {
+      toast.success("Imóvel excluído.");
+      await invalidar();
+      setExcluindo(null);
+    },
+    onError: (err) => {
+      toast.error(mensagemErro(err));
+      setExcluindo(null);
+    },
+  });
+
+  const mutRestaurar = useMutation({
+    mutationFn: (id: string) => restaurarImovel(id),
+    onSuccess: async () => {
+      toast.success("Imóvel restaurado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
   });
 
   function abrirNovo() {
@@ -147,7 +203,7 @@ export function ImoveisPage() {
             onChange={(e) => setBusca(e.target.value)}
           />
         </div>
-        <Select value={statusFiltro} onValueChange={setStatusFiltro}>
+        <Select value={statusFiltro} onValueChange={setStatusFiltro} disabled={apenasExcluidos}>
           <SelectTrigger className="w-full sm:w-48">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -160,6 +216,12 @@ export function ImoveisPage() {
             ))}
           </SelectContent>
         </Select>
+        {ehProprietario && (
+          <label className="flex items-center gap-2 whitespace-nowrap px-1 text-sm">
+            <Checkbox checked={apenasExcluidos} onCheckedChange={(v) => setApenasExcluidos(v === true)} />
+            Mostrar excluídos
+          </label>
+        )}
       </div>
 
       <div className="rounded-lg border bg-background">
@@ -201,16 +263,46 @@ export function ImoveisPage() {
                 <TableCell>{imovel.tipoImovel?.nome ?? "-"}</TableCell>
                 <TableCell>{formatarMoeda(imovel.valorAluguelBase)}</TableCell>
                 <TableCell>
-                  <StatusBadge status={imovel.status} />
+                  <StatusBadge status={imovel.excluidoEm ? "excluido" : imovel.status} />
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" asChild>
                     <Link to={`/imoveis/${imovel.id}`}>Ver detalhes</Link>
                   </Button>
-                  {podeEditar && (
-                    <Button variant="ghost" size="sm" onClick={() => abrirEdicao(imovel)}>
-                      Editar
-                    </Button>
+                  {imovel.excluidoEm ? (
+                    ehProprietario && (
+                      <Button variant="ghost" size="sm" onClick={() => mutRestaurar.mutate(imovel.id)}>
+                        Restaurar
+                      </Button>
+                    )
+                  ) : (
+                    <>
+                      {podeEditar && (
+                        <Button variant="ghost" size="sm" onClick={() => abrirEdicao(imovel)}>
+                          Editar
+                        </Button>
+                      )}
+                      {podeEditar && imovel.status === "inativo" && (
+                        <Button variant="ghost" size="sm" onClick={() => mutAtivar.mutate(imovel.id)}>
+                          Ativar
+                        </Button>
+                      )}
+                      {podeEditar && imovel.status !== "inativo" && imovel.status !== "alugado" && (
+                        <Button variant="ghost" size="sm" onClick={() => mutDesativar.mutate(imovel.id)}>
+                          Desativar
+                        </Button>
+                      )}
+                      {ehProprietario && imovel.status !== "alugado" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => setExcluindo(imovel)}
+                        >
+                          Excluir
+                        </Button>
+                      )}
+                    </>
                   )}
                 </TableCell>
               </TableRow>
@@ -289,13 +381,10 @@ export function ImoveisPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="valor">Valor do aluguel base</Label>
-                <Input
+                <CurrencyInput
                   id="valor"
-                  type="number"
-                  min={0}
-                  step="0.01"
                   value={form.valorAluguelBase}
-                  onChange={(e) => setForm({ ...form, valorAluguelBase: Number(e.target.value) })}
+                  onValueChange={(v) => setForm({ ...form, valorAluguelBase: v ?? 0 })}
                 />
               </div>
             </div>
@@ -319,6 +408,18 @@ export function ImoveisPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(excluindo)}
+        onOpenChange={(open) => !open && setExcluindo(null)}
+        titulo="Excluir imóvel"
+        descricao="O imóvel será ocultado das listagens, mas o histórico de contratos e pagamentos é mantido. É possível restaurá-lo depois."
+        textoConfirmar="Excluir"
+        destrutivo
+        onConfirm={() => {
+          if (excluindo) mutExcluir.mutate(excluindo.id);
+        }}
+      />
     </div>
   );
 }

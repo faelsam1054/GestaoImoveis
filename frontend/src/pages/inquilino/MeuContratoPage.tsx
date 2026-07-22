@@ -102,12 +102,20 @@ export function MeuContratoPage() {
           <div>
             <p className="font-medium">Contrato em PDF</p>
             <p className="text-sm text-muted-foreground">
-              {contrato.arquivoPdfUrl ? "Disponível para download." : "Ainda não disponível para download."}
+              {contrato.contratoAssinadoUrl
+                ? "Versão assinada disponível para download."
+                : contrato.arquivoPdfUrl
+                  ? "Versão gerada pelo sistema disponível para download."
+                  : "Ainda não disponível para download."}
             </p>
           </div>
-          <Button variant="outline" disabled={!contrato.arquivoPdfUrl} asChild={Boolean(contrato.arquivoPdfUrl)}>
-            {contrato.arquivoPdfUrl ? (
-              <a href={contrato.arquivoPdfUrl} target="_blank" rel="noreferrer">
+          <Button
+            variant="outline"
+            disabled={!contrato.contratoAssinadoUrl && !contrato.arquivoPdfUrl}
+            asChild={Boolean(contrato.contratoAssinadoUrl ?? contrato.arquivoPdfUrl)}
+          >
+            {contrato.contratoAssinadoUrl ?? contrato.arquivoPdfUrl ? (
+              <a href={contrato.contratoAssinadoUrl ?? contrato.arquivoPdfUrl!} target="_blank" rel="noreferrer">
                 <Download className="h-4 w-4" />
                 Baixar contrato
               </a>

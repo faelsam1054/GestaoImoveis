@@ -1,32 +1,33 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import { KeyRound } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { api, mensagemErro } from "@/lib/api-client";
-import { rotaInicial } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function TrocarSenhaPage() {
-  const { usuario, atualizarUsuario, logout } = useAuth();
+export function RedefinirSenhaPage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") ?? "";
   const navigate = useNavigate();
 
-  const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmacao, setConfirmacao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  if (!usuario) return null;
-
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setErro(null);
 
+    if (!token) {
+      setErro("Token de redefinição ausente ou inválido. Solicite um novo link.");
+      return;
+    }
     if (novaSenha !== confirmacao) {
-      setErro("A confirmação de senha não confere com a nova senha.");
+      setErro("A confirmação não confere com a nova senha.");
       return;
     }
     if (novaSenha.length < 8) {
@@ -36,12 +37,11 @@ export function TrocarSenhaPage() {
 
     setEnviando(true);
     try {
-      await api.post("/auth/trocar-senha", { senhaAtual, novaSenha });
-      // Trocar a senha revoga todas as sessoes no backend; refaz o login localmente.
-      atualizarUsuario({ ...usuario!, precisaTrocarSenha: false });
-      navigate(rotaInicial(usuario!), { replace: true });
+      await api.post("/auth/redefinir-senha", { token, novaSenha });
+      toast.success("Senha redefinida com sucesso. Faça login com a nova senha.");
+      navigate("/login", { replace: true });
     } catch (err) {
-      setErro(mensagemErro(err, "Não foi possível trocar a senha."));
+      setErro(mensagemErro(err, "Não foi possível redefinir a senha. O link pode ter expirado."));
     } finally {
       setEnviando(false);
     }
@@ -54,25 +54,20 @@ export function TrocarSenhaPage() {
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <KeyRound className="h-5 w-5" />
           </div>
-          <CardTitle>Defina uma nova senha</CardTitle>
-          <CardDescription>
-            {usuario.precisaTrocarSenha
-              ? "Este é seu primeiro acesso. Troque a senha temporária antes de continuar."
-              : "Altere sua senha de acesso."}
-          </CardDescription>
+          <CardTitle>Redefinir senha</CardTitle>
+          <CardDescription>Defina uma nova senha de acesso.</CardDescription>
         </CardHeader>
         <CardContent>
+          {!token && (
+            <p className="mb-4 text-sm text-destructive">
+              Link inválido ou incompleto.{" "}
+              <Link to="/esqueci-senha" className="underline">
+                Solicite um novo link
+              </Link>
+              .
+            </p>
+          )}
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="senhaAtual">Senha atual</Label>
-              <PasswordInput
-                id="senhaAtual"
-                autoComplete="current-password"
-                required
-                value={senhaAtual}
-                onChange={(e) => setSenhaAtual(e.target.value)}
-              />
-            </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="novaSenha">Nova senha</Label>
               <PasswordInput
@@ -96,11 +91,8 @@ export function TrocarSenhaPage() {
               />
             </div>
             {erro && <p className="text-sm text-destructive">{erro}</p>}
-            <Button type="submit" className="w-full" disabled={enviando}>
+            <Button type="submit" className="w-full" disabled={enviando || !token}>
               {enviando ? "Salvando..." : "Salvar nova senha"}
-            </Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={() => void logout()}>
-              Cancelar e sair
             </Button>
           </form>
         </CardContent>

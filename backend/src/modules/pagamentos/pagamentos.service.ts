@@ -12,6 +12,7 @@ interface FiltrosPagamento {
   competencia?: string;
   page?: string;
   pageSize?: string;
+  imovelIdsPermitidos?: string[] | null;
 }
 
 const includePadrao = {
@@ -41,6 +42,7 @@ export async function listar(filtros: FiltrosPagamento) {
     status: filtros.status,
     contratoId: filtros.contratoId,
     competencia: filtros.competencia,
+    contrato: filtros.imovelIdsPermitidos ? { imovelId: { in: filtros.imovelIdsPermitidos } } : undefined,
   };
 
   const [dados, total] = await Promise.all([

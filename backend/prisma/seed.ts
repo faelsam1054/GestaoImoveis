@@ -133,7 +133,10 @@ async function main() {
   const inquilino1 = await criarInquilino("inquilino1@sistema.com", "João Pereira", "11122233344", "11988887777");
   const inquilino2 = await criarInquilino("inquilino2@sistema.com", "Maria Souza", "22233344455", "11977776666");
   await criarInquilino("inquilino3@sistema.com", "Pedro Lima", "33344455566", "11966665555");
-  console.log(`✓ 3 inquilinos: inquilino1@sistema.com, inquilino2@sistema.com, inquilino3@sistema.com / ${SENHA_PADRAO}`);
+  const inquilino4 = await criarInquilino("inquilino4@sistema.com", "Ana Ribeiro", "44455566677", "11955554444");
+  console.log(
+    `✓ 4 inquilinos: inquilino1@sistema.com, inquilino2@sistema.com, inquilino3@sistema.com, inquilino4@sistema.com / ${SENHA_PADRAO}`,
+  );
 
   // ── 5. Imoveis (3) ────────────────────────────────────────────────────────
   const imovel1 = await prisma.imovel.upsert({
@@ -188,7 +191,58 @@ async function main() {
       status: "vago",
     },
   });
-  console.log("✓ 3 imóveis (Rua das Flores, Avenida Central, Rua dos Estudantes)");
+  const imovel4 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-4" },
+    update: {},
+    create: {
+      id: "seed-imovel-4",
+      tipoImovelId: tipos["Sala Comercial"],
+      logradouro: "Rua do Comércio",
+      numero: "321",
+      bairro: "Centro",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01020-000",
+      valorAluguelBase: 3000,
+      descricao: "Sala comercial térrea, ideal para loja ou escritório.",
+      status: "vago",
+    },
+  });
+  const imovel5 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-5" },
+    update: {},
+    create: {
+      id: "seed-imovel-5",
+      tipoImovelId: tipos.Terreno,
+      logradouro: "Rua do Sítio",
+      numero: "50",
+      bairro: "Zona Rural",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "04567-000",
+      valorAluguelBase: 500,
+      descricao: "Terreno temporariamente fora de oferta para locação.",
+      status: "inativo",
+    },
+  });
+  console.log(
+    "✓ 5 imóveis (Rua das Flores, Avenida Central, Rua dos Estudantes, Rua do Comércio, Rua do Sítio [inativo])",
+  );
+
+  // ── 5b. Vinculo de administradores a imoveis (Funcionalidade 1: acesso restrito por imovel) ──
+  // upsert individual pois SQLite nao suporta skipDuplicates em createMany.
+  for (const vinculo of [
+    { administradorId: admin1.id, imovelId: imovel1.id },
+    { administradorId: admin1.id, imovelId: imovel2.id },
+    { administradorId: admin2.id, imovelId: imovel3.id },
+  ]) {
+    await prisma.adminImovel.upsert({
+      where: { administradorId_imovelId: vinculo },
+      update: {},
+      create: vinculo,
+    });
+  }
+  console.log("✓ administrador1 vinculado a 2 imóveis; administrador2 vinculado a 1 imóvel (acesso restrito)");
 
   // ── 6. Contratos ativos (2) com ~6 meses de historico de pagamentos ─────
   async function criarContratoComHistorico(
@@ -198,7 +252,10 @@ async function main() {
     diaVencimento: number,
     valorAluguel: number,
   ) {
-    const existente = await prisma.contrato.findFirst({ where: { imovelId, status: "ativo" } });
+    // Verifica por qualquer contrato (nao so "ativo"): se o seed ja rodou antes e o
+    // contrato de demonstracao foi encerrado/rescindido via uso real do app, nao
+    // deve criar um novo por cima (evita duplicar dados a cada re-execucao do seed).
+    const existente = await prisma.contrato.findFirst({ where: { imovelId } });
     if (existente) return existente;
 
     const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth() - mesesAtras, 1);
@@ -274,11 +331,128 @@ async function main() {
     return contrato;
   }
 
+  // Contrato com caucao parcelada em 3x (Funcionalidade 2): mesma logica de
+  // split/vencimentos usada pelo backend (calcularParcelasCaucao), mas escrita
+  // diretamente aqui pois o seed nao passa pela camada de servico.
+  async function criarContratoComCaucaoParcelada(
+    imovelId: string,
+    inquilinoId: string,
+    mesesAtras: number,
+    diaVencimento: number,
+    valorAluguel: number,
+    valorCaucao: number,
+  ) {
+    // Verifica por qualquer contrato (nao so "ativo"): se o seed ja rodou antes e o
+    // contrato de demonstracao foi encerrado/rescindido via uso real do app, nao
+    // deve criar um novo por cima (evita duplicar dados a cada re-execucao do seed).
+    const existente = await prisma.contrato.findFirst({ where: { imovelId } });
+    if (existente) return existente;
+
+    const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth() - mesesAtras, 1);
+    const dataFim = new Date(dataInicio.getFullYear() + 1, dataInicio.getMonth(), dataInicio.getDate());
+
+    const contrato = await prisma.contrato.create({
+      data: {
+        imovelId,
+        inquilinoId,
+        dataInicio,
+        dataFim,
+        diaVencimento,
+        valorAluguel,
+        valorCaucao,
+        caucaoNumeroParcelas: 3,
+        status: "ativo",
+      },
+    });
+    await prisma.imovel.update({ where: { id: imovelId }, data: { status: "alugado" } });
+
+    const valorParcela = valorCaucao / 3;
+    const vencimentoParcela2 = new Date(dataInicio);
+    vencimentoParcela2.setDate(vencimentoParcela2.getDate() + 30);
+    const vencimentoParcela3 = new Date(dataInicio);
+    vencimentoParcela3.setDate(vencimentoParcela3.getDate() + 60);
+
+    await prisma.caucaoParcela.createMany({
+      data: [
+        {
+          contratoId: contrato.id,
+          numeroParcela: 1,
+          valorParcela,
+          dataVencimento: dataInicio,
+          dataPagamento: dataInicio,
+          status: "pago",
+          formaPagamento: "pix",
+        },
+        {
+          contratoId: contrato.id,
+          numeroParcela: 2,
+          valorParcela,
+          dataVencimento: vencimentoParcela2,
+          status: vencimentoParcela2 < hojeSemHora ? "atrasado" : "pendente",
+        },
+        {
+          contratoId: contrato.id,
+          numeroParcela: 3,
+          valorParcela,
+          dataVencimento: vencimentoParcela3,
+          status: vencimentoParcela3 < hojeSemHora ? "atrasado" : "pendente",
+        },
+      ],
+    });
+
+    // Historico de pagamentos de aluguel, igual ao criarContratoComHistorico.
+    let cursor = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), 1);
+    const mesAtualCursor = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    while (cursor <= mesAtualCursor) {
+      const ano = cursor.getFullYear();
+      const mes = cursor.getMonth();
+      const ultimoDiaDoMes = new Date(ano, mes + 1, 0).getDate();
+      const dia = Math.min(diaVencimento, ultimoDiaDoMes);
+      const vencimento = new Date(ano, mes, dia);
+      const ehMesAtual = ano === hoje.getFullYear() && mes === hoje.getMonth();
+
+      const dados = ehMesAtual
+        ? {
+            status: vencimento < hojeSemHora ? ("atrasado" as const) : ("pendente" as const),
+            valorPago: null,
+            dataPagamento: null,
+            formaPagamento: null,
+          }
+        : {
+            status: "pago" as const,
+            valorPago: valorAluguel,
+            dataPagamento: vencimento,
+            formaPagamento: "pix" as const,
+          };
+
+      await prisma.pagamento.create({
+        data: {
+          contratoId: contrato.id,
+          tipo: "aluguel",
+          competencia: competenciaDe(cursor),
+          valorPrevisto: valorAluguel,
+          dataVencimento: vencimento,
+          ...dados,
+        },
+      });
+
+      cursor = new Date(ano, mes + 1, 1);
+    }
+
+    return contrato;
+  }
+
   // diaVencimento=10 (mes atual ja passou -> demonstra pagamento em atraso)
   await criarContratoComHistorico(imovel1.id, inquilino1.id, 6, 10, 2200);
   // diaVencimento=25 (mes atual ainda nao chegou -> demonstra proximo vencimento)
   await criarContratoComHistorico(imovel2.id, inquilino2.id, 5, 25, 1800);
-  console.log("✓ 2 contratos ativos com ~6 meses de histórico de pagamentos (imóvel 3 fica vago; inquilino 3 fica sem contrato)");
+  // caucao de R$3.000 em 3x: parcela 1 paga, parcela 2 atrasada, parcela 3 pendente
+  await criarContratoComCaucaoParcelada(imovel4.id, inquilino4.id, 1, 15, 3000, 3000);
+  console.log(
+    "✓ 3 contratos ativos: 2 com ~6 meses de histórico padrão, 1 com caução parcelada em 3x (1 paga, 1 atrasada, 1 pendente) " +
+      "(imóvel 3 fica vago; imóvel 5 fica inativo; inquilino 3 fica sem contrato)",
+  );
 
   // ── 7. Gastos de manutencao (variados) ───────────────────────────────────
   const gastosExistentes = await prisma.gastoManutencao.count({

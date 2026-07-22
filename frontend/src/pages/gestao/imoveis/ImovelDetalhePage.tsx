@@ -59,7 +59,7 @@ export function ImovelDetalhePage() {
           <h2 className="text-2xl font-semibold tracking-tight">
             {imovel.logradouro}, {imovel.numero}
           </h2>
-          <StatusBadge status={imovel.status} />
+          <StatusBadge status={imovel.excluidoEm ? "excluido" : imovel.status} />
         </div>
         <p className="text-muted-foreground">
           {imovel.complemento ? `${imovel.complemento} - ` : ""}

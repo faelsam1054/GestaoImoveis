@@ -1,5 +1,6 @@
 import { asyncHandler } from "../../utils/asyncHandler";
 import { paramId } from "../../utils/params";
+import { AppError } from "../../utils/AppError";
 import * as service from "./pagamentos.service";
 import {
   criarPagamentoAvulsoSchema,
@@ -8,20 +9,39 @@ import {
   listarPagamentosQuerySchema,
 } from "./pagamentos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
+import {
+  obterImovelIdsPermitidos,
+  verificarAcessoAoContrato,
+  verificarAcessoAoPagamento,
+} from "../administradores/acesso-imovel.service";
+import type { Request } from "express";
+
+async function garantirAcessoContrato(req: Request, contratoId: string) {
+  const permitido = await verificarAcessoAoContrato(req.user!.id, req.user!.role, contratoId);
+  if (!permitido) throw new AppError("Voce nao tem acesso ao imovel deste contrato", 403);
+}
+
+async function garantirAcessoPagamento(req: Request, pagamentoId: string) {
+  const permitido = await verificarAcessoAoPagamento(req.user!.id, req.user!.role, pagamentoId);
+  if (!permitido) throw new AppError("Voce nao tem acesso a este pagamento", 403);
+}
 
 export const listar = asyncHandler(async (req, res) => {
   const filtros = listarPagamentosQuerySchema.parse(req.query);
-  const resultado = await service.listar(filtros);
+  const imovelIdsPermitidos = await obterImovelIdsPermitidos(req.user!.id, req.user!.role);
+  const resultado = await service.listar({ ...filtros, imovelIdsPermitidos });
   res.json(resultado);
 });
 
 export const detalhar = asyncHandler(async (req, res) => {
+  await garantirAcessoPagamento(req, paramId(req));
   const pagamento = await service.buscarPorIdOuFalhar(paramId(req));
   res.json(pagamento);
 });
 
 export const criarAvulso = asyncHandler(async (req, res) => {
   const data = criarPagamentoAvulsoSchema.parse(req.body);
+  await garantirAcessoContrato(req, data.contratoId);
   const pagamento = await service.criarAvulso(data);
   await registrarAuditoria({
     usuarioId: req.user!.id,
@@ -35,6 +55,7 @@ export const criarAvulso = asyncHandler(async (req, res) => {
 });
 
 export const atualizar = asyncHandler(async (req, res) => {
+  await garantirAcessoPagamento(req, paramId(req));
   const data = atualizarPagamentoSchema.parse(req.body);
   const antes = await service.buscarPorIdOuFalhar(paramId(req));
   const pagamento = await service.atualizar(paramId(req), data);
@@ -51,6 +72,7 @@ export const atualizar = asyncHandler(async (req, res) => {
 });
 
 export const marcarComoPago = asyncHandler(async (req, res) => {
+  await garantirAcessoPagamento(req, paramId(req));
   const data = marcarPagoSchema.parse(req.body);
   const pagamento = await service.marcarComoPago(paramId(req), data, req.user!.id);
   await registrarAuditoria({

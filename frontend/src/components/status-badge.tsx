@@ -16,6 +16,7 @@ const ROTULOS: Record<string, string> = {
   orcamento: "Orçamento",
   aprovado: "Aprovado",
   executado: "Executado",
+  excluido: "Excluído",
 };
 
 // Classes de cor explicitas (o Badge do shadcn nao tem variantes success/warning
@@ -36,6 +37,7 @@ const CORES: Record<string, string> = {
   orcamento: "bg-muted text-muted-foreground",
   aprovado: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
   executado: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  excluido: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
 };
 
 export function StatusBadge({ status }: { status: string }) {

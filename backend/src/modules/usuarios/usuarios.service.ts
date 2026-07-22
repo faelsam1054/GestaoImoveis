@@ -30,6 +30,26 @@ export function sanitizeUsuario<T extends { senhaHash: string }>(usuario: T): Om
   return resto;
 }
 
+// Usado pelo proprietario para resetar a senha de um Inquilino/Administrador:
+// gera uma nova senha temporaria (mesmo fluxo do cadastro inicial) e revoga
+// as sessoes ativas, forçando um novo login com a senha trocada.
+export async function resetarSenhaUsuario(usuarioId: string, client: Cliente = prisma) {
+  const senhaTemporaria = gerarSenhaTemporaria();
+  const senhaHash = await hashPassword(senhaTemporaria);
+
+  await client.usuario.update({
+    where: { id: usuarioId },
+    data: { senhaHash, precisaTrocarSenha: true },
+  });
+
+  await client.refreshToken.updateMany({
+    where: { usuarioId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
+  return { senhaTemporaria };
+}
+
 export async function buscarUsuarioAtivoOuFalhar(id: string): Promise<Usuario> {
   const usuario = await prisma.usuario.findUnique({ where: { id } });
   if (!usuario) {

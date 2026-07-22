@@ -1,7 +1,13 @@
 import { asyncHandler } from "../../utils/asyncHandler";
 import { paramId } from "../../utils/params";
 import * as service from "./administradores.service";
-import { criarAdministradorSchema, atualizarAdministradorSchema, atualizarPermissoesSchema } from "./administradores.schema";
+import {
+  criarAdministradorSchema,
+  atualizarAdministradorSchema,
+  atualizarPermissoesSchema,
+  vincularImovelSchema,
+  substituirImoveisVinculadosSchema,
+} from "./administradores.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 
 export const listar = asyncHandler(async (req, res) => {
@@ -56,6 +62,18 @@ export const desativar = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+export const resetarSenha = asyncHandler(async (req, res) => {
+  const credenciaisTemporarias = await service.resetarSenha(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RESET_SENHA_ADMINISTRADOR",
+    entidade: "Usuario",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.json({ credenciaisTemporarias });
+});
+
 export const obterPermissoes = asyncHandler(async (req, res) => {
   const permissoes = await service.obterPermissoes(paramId(req));
   res.json(permissoes);
@@ -75,4 +93,52 @@ export const atualizarPermissoes = asyncHandler(async (req, res) => {
     ip: getClientIp(req),
   });
   res.json(permissoes);
+});
+
+// ── Vinculo de imoveis ────────────────────────────────────────────────────
+
+export const listarImoveisVinculados = asyncHandler(async (req, res) => {
+  const imoveis = await service.listarImoveisVinculados(paramId(req));
+  res.json(imoveis);
+});
+
+export const vincularImovel = asyncHandler(async (req, res) => {
+  const { imovelId } = vincularImovelSchema.parse(req.body);
+  const vinculo = await service.vincularImovel(paramId(req), imovelId);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "VINCULAR_IMOVEL_ADMINISTRADOR",
+    entidade: "AdminImovel",
+    entidadeId: paramId(req),
+    dadosDepois: { imovelId },
+    ip: getClientIp(req),
+  });
+  res.status(201).json(vinculo);
+});
+
+export const desvincularImovel = asyncHandler(async (req, res) => {
+  await service.desvincularImovel(paramId(req), paramId(req, "imovelId"));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DESVINCULAR_IMOVEL_ADMINISTRADOR",
+    entidade: "AdminImovel",
+    entidadeId: paramId(req),
+    dadosDepois: { imovelId: paramId(req, "imovelId") },
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const substituirImoveisVinculados = asyncHandler(async (req, res) => {
+  const { imovelIds } = substituirImoveisVinculadosSchema.parse(req.body);
+  const imoveis = await service.substituirImoveisVinculados(paramId(req), imovelIds);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "SUBSTITUIR_IMOVEIS_VINCULADOS",
+    entidade: "AdminImovel",
+    entidadeId: paramId(req),
+    dadosDepois: { imovelIds },
+    ip: getClientIp(req),
+  });
+  res.json(imoveis);
 });

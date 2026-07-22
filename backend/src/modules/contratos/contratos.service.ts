@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarContratoPdf } from "../../services/pdf/contrato.pdf";
+import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import type { criarContratoSchema, renovarContratoSchema } from "./contratos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -12,6 +13,7 @@ interface FiltrosContrato {
   inquilinoId?: string;
   page?: string;
   pageSize?: string;
+  imovelIdsPermitidos?: string[] | null;
 }
 
 const includePadrao = {
@@ -45,9 +47,18 @@ function gerarCompetencias(dataInicio: Date, dataFim: Date, diaVencimento: numbe
 async function gerarPagamentosDoContrato(
   tx: Prisma.TransactionClient,
   contratoId: string,
-  dados: { dataInicio: Date; dataFim: Date; diaVencimento: number; valorAluguel: number; valorCaucao?: number },
+  dados: {
+    dataInicio: Date;
+    dataFim: Date;
+    diaVencimento: number;
+    valorAluguel: number;
+    valorCaucao?: number;
+    caucaoNumeroParcelas?: number;
+  },
 ) {
-  if (dados.valorCaucao && dados.valorCaucao > 0) {
+  // Caucao em parcela unica (padrao/legado): continua como Pagamento avulso tipo=caucao.
+  // Caucao em 2x/3x usa CaucaoParcela em vez disso (ver gerarParcelasCaucao).
+  if (dados.valorCaucao && dados.valorCaucao > 0 && (dados.caucaoNumeroParcelas ?? 1) <= 1) {
     await tx.pagamento.create({
       data: {
         contratoId,
@@ -68,6 +79,50 @@ async function gerarPagamentosDoContrato(
       competencia: c.competencia,
       valorPrevisto: dados.valorAluguel,
       dataVencimento: c.dataVencimento,
+      status: "pendente" as const,
+    })),
+  });
+}
+
+// Divide o valor total da caucao em N parcelas iguais (a ultima absorve o
+// resto do arredondamento para o total fechar certinho), com vencimentos
+// sugeridos em 0/30/60 dias a partir do inicio do contrato.
+function calcularParcelasCaucao(valorTotal: number, numeroParcelas: number, dataInicio: Date) {
+  const centavosTotal = Math.round(valorTotal * 100);
+  const centavosPorParcela = Math.floor(centavosTotal / numeroParcelas);
+
+  const parcelas: { numeroParcela: number; valorParcela: number; dataVencimento: Date }[] = [];
+  let centavosRestantes = centavosTotal;
+
+  for (let i = 1; i <= numeroParcelas; i++) {
+    const ehUltima = i === numeroParcelas;
+    const centavosDaParcela = ehUltima ? centavosRestantes : centavosPorParcela;
+    centavosRestantes -= centavosDaParcela;
+
+    const dataVencimento = new Date(dataInicio);
+    dataVencimento.setDate(dataVencimento.getDate() + (i - 1) * 30);
+
+    parcelas.push({ numeroParcela: i, valorParcela: centavosDaParcela / 100, dataVencimento });
+  }
+
+  return parcelas;
+}
+
+async function gerarParcelasCaucao(
+  tx: Prisma.TransactionClient,
+  contratoId: string,
+  dados: { dataInicio: Date; valorCaucao?: number; caucaoNumeroParcelas?: number },
+) {
+  const numeroParcelas = dados.caucaoNumeroParcelas ?? 1;
+  if (!dados.valorCaucao || dados.valorCaucao <= 0 || numeroParcelas <= 1) return;
+
+  const parcelas = calcularParcelasCaucao(dados.valorCaucao, numeroParcelas, dados.dataInicio);
+  await tx.caucaoParcela.createMany({
+    data: parcelas.map((p) => ({
+      contratoId,
+      numeroParcela: p.numeroParcela,
+      valorParcela: p.valorParcela,
+      dataVencimento: p.dataVencimento,
       status: "pendente" as const,
     })),
   });
@@ -111,7 +166,7 @@ export async function listar(filtros: FiltrosContrato) {
 
   const where: Prisma.ContratoWhereInput = {
     status: filtros.status,
-    imovelId: filtros.imovelId,
+    imovelId: combinarFiltroImovel(filtros.imovelId, filtros.imovelIdsPermitidos ?? null),
     inquilinoId: filtros.inquilinoId,
   };
 
@@ -135,6 +190,7 @@ export async function buscarPorIdOuFalhar(id: string) {
     include: {
       ...includePadrao,
       pagamentos: { orderBy: { dataVencimento: "asc" } },
+      caucaoParcelas: { orderBy: { numeroParcela: "asc" } },
       contratoAnterior: true,
       contratoRenovado: true,
     },
@@ -146,12 +202,21 @@ export async function buscarPorIdOuFalhar(id: string) {
 export async function criar(data: z.infer<typeof criarContratoSchema>) {
   const imovel = await prisma.imovel.findUnique({ where: { id: data.imovelId } });
   if (!imovel) throw new AppError("Imovel nao encontrado", 400);
+  if (imovel.excluidoEm) throw new AppError("Este imovel foi excluido", 409);
   if (imovel.status === "alugado") {
     throw new AppError("Este imovel ja possui um contrato ativo", 409);
   }
+  if (imovel.status === "inativo") {
+    throw new AppError("Este imovel esta inativo e nao aceita novos contratos", 409);
+  }
 
-  const inquilino = await prisma.inquilino.findUnique({ where: { id: data.inquilinoId } });
+  const inquilino = await prisma.inquilino.findUnique({
+    where: { id: data.inquilinoId },
+    include: { usuario: true },
+  });
   if (!inquilino) throw new AppError("Inquilino nao encontrado", 400);
+  if (inquilino.excluidoEm) throw new AppError("Este inquilino foi excluido", 409);
+  if (!inquilino.usuario.ativo) throw new AppError("Este inquilino esta inativo", 409);
 
   const contratoCriado = await prisma.$transaction(async (tx) => {
     const contrato = await tx.contrato.create({
@@ -163,11 +228,13 @@ export async function criar(data: z.infer<typeof criarContratoSchema>) {
         diaVencimento: data.diaVencimento,
         valorAluguel: data.valorAluguel,
         valorCaucao: data.valorCaucao,
+        caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
         status: "ativo",
       },
     });
 
     await gerarPagamentosDoContrato(tx, contrato.id, data);
+    await gerarParcelasCaucao(tx, contrato.id, data);
     await tx.imovel.update({ where: { id: data.imovelId }, data: { status: "alugado" } });
 
     return tx.contrato.findUniqueOrThrow({ where: { id: contrato.id }, include: includePadrao });
@@ -228,12 +295,14 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
         diaVencimento: data.diaVencimento,
         valorAluguel: data.valorAluguel,
         valorCaucao: data.valorCaucao,
+        caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
         status: "ativo",
         contratoAnteriorId: id,
       },
     });
 
     await gerarPagamentosDoContrato(tx, novoContrato.id, data);
+    await gerarParcelasCaucao(tx, novoContrato.id, data);
     await tx.imovel.update({ where: { id: contratoAtual.imovelId }, data: { status: "alugado" } });
 
     return tx.contrato.findUniqueOrThrow({ where: { id: novoContrato.id }, include: includePadrao });
@@ -241,4 +310,14 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
 
   await gerarEAnexarContratoPdf(novoContratoCriado.id);
   return prisma.contrato.findUniqueOrThrow({ where: { id: novoContratoCriado.id }, include: includePadrao });
+}
+
+export async function anexarContratoAssinado(id: string, url: string) {
+  await buscarPorIdOuFalhar(id);
+  return prisma.contrato.update({ where: { id }, data: { contratoAssinadoUrl: url }, include: includePadrao });
+}
+
+export async function removerContratoAssinado(id: string) {
+  await buscarPorIdOuFalhar(id);
+  return prisma.contrato.update({ where: { id }, data: { contratoAssinadoUrl: null }, include: includePadrao });
 }

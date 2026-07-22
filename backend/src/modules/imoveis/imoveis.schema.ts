@@ -23,4 +23,5 @@ export const listarImoveisQuerySchema = z.object({
   busca: z.string().optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
+  apenasExcluidos: z.coerce.boolean().optional(),
 });

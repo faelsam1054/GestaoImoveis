@@ -25,3 +25,11 @@ export const atualizarPermissoesSchema = z.object({
   podeVerAdministradores: z.boolean().optional(),
   podeEditarPerfil: z.boolean().optional(),
 });
+
+export const vincularImovelSchema = z.object({
+  imovelId: z.string().min(1),
+});
+
+export const substituirImoveisVinculadosSchema = z.object({
+  imovelIds: z.array(z.string().min(1)),
+});

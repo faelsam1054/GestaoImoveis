@@ -10,6 +10,8 @@ export interface DadosRecibo {
   imovel: { logradouro: string; numero: string; bairro: string; cidade: string; estado: string };
   inquilino: { nome: string; cpf: string };
   proprietario: { nome: string };
+  // Texto livre opcional, ex: "(parcela 2 de 3)" para caucao parcelada.
+  detalheExtra?: string;
 }
 
 const ROTULO_TIPO: Record<string, string> = {
@@ -50,8 +52,8 @@ export async function gerarReciboPdf(dados: DadosRecibo): Promise<ArquivoSalvo> 
     .font("Helvetica")
     .text(
       `Recebi de ${dados.inquilino.nome} (CPF ${dados.inquilino.cpf}) a quantia de ${formatarMoeda(dados.valorPago)}, ` +
-        `referente a ${ROTULO_TIPO[dados.tipo] ?? dados.tipo} da competência ${dados.competencia}, relativo ao imóvel ` +
-        `localizado em ${endereco}.`,
+        `referente a ${ROTULO_TIPO[dados.tipo] ?? dados.tipo} da competência ${dados.competencia}` +
+        `${dados.detalheExtra ? ` ${dados.detalheExtra}` : ""}, relativo ao imóvel localizado em ${endereco}.`,
       { align: "justify", lineGap: 4 },
     );
 

@@ -16,6 +16,7 @@ import { formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -282,13 +283,10 @@ export function ManutencaoPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="valor">Valor</Label>
-                <Input
+                <CurrencyInput
                   id="valor"
-                  type="number"
-                  min={0}
-                  step="0.01"
                   value={form.valor}
-                  onChange={(e) => setForm({ ...form, valor: Number(e.target.value) })}
+                  onValueChange={(v) => setForm({ ...form, valor: v ?? 0 })}
                 />
               </div>
             </div>
