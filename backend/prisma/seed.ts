@@ -1,0 +1,370 @@
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcrypt";
+
+const prisma = new PrismaClient();
+const SALT_ROUNDS = 12;
+const SENHA_PADRAO = "demo1234";
+
+async function hash(senha: string): Promise<string> {
+  return bcrypt.hash(senha, SALT_ROUNDS);
+}
+
+function competenciaDe(data: Date): string {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function main() {
+  console.log("Iniciando seed...\n");
+  const hoje = new Date();
+  const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const senhaPadraoHash = await hash(SENHA_PADRAO);
+
+  // ── 1. Tipos de imovel padrao ──────────────────────────────────────────
+  const nomesTipos = ["Casa", "Apartamento", "Kitnet", "Sala Comercial", "Galpão", "Terreno"];
+  const tipos: Record<string, string> = {};
+  for (const nome of nomesTipos) {
+    const tipo = await prisma.tipoImovel.upsert({ where: { nome }, update: {}, create: { nome } });
+    tipos[nome] = tipo.id;
+  }
+  console.log(`✓ ${nomesTipos.length} tipos de imóvel`);
+
+  // ── 2. Proprietario ─────────────────────────────────────────────────────
+  const senhaProprietarioHash = await hash("admin123");
+  await prisma.usuario.upsert({
+    where: { email: "admin@sistema.com" },
+    update: {},
+    create: {
+      nome: "Administrador Geral",
+      email: "admin@sistema.com",
+      senhaHash: senhaProprietarioHash,
+      role: "proprietario",
+      ativo: true,
+      precisaTrocarSenha: false,
+    },
+  });
+  console.log("✓ proprietario: admin@sistema.com / admin123");
+
+  // ── 3. Administradores (2, com permissoes diferentes) ────────────────────
+  const admin1 = await prisma.usuario.upsert({
+    where: { email: "administrador1@sistema.com" },
+    update: {},
+    create: {
+      nome: "Carlos Administrador",
+      email: "administrador1@sistema.com",
+      senhaHash: senhaPadraoHash,
+      role: "administrador",
+      ativo: true,
+      precisaTrocarSenha: false,
+    },
+  });
+  await prisma.permissaoAdministrador.upsert({
+    where: { usuarioId: admin1.id },
+    update: {},
+    create: {
+      usuarioId: admin1.id,
+      podeVerImoveis: true,
+      podeEditarImoveis: true,
+      podeVerInquilinos: true,
+      podeEditarInquilinos: true,
+      podeVerContratos: true,
+      podeEditarContratos: false,
+      podeVerPagamentos: true,
+      podeRegistrarPagamentos: true,
+      podeVerManutencao: true,
+      podeCadastrarManutencao: true,
+      podeVerAdministradores: false,
+      podeEditarPerfil: true,
+    },
+  });
+
+  const admin2 = await prisma.usuario.upsert({
+    where: { email: "administrador2@sistema.com" },
+    update: {},
+    create: {
+      nome: "Fernanda Administradora",
+      email: "administrador2@sistema.com",
+      senhaHash: senhaPadraoHash,
+      role: "administrador",
+      ativo: true,
+      precisaTrocarSenha: false,
+    },
+  });
+  await prisma.permissaoAdministrador.upsert({
+    where: { usuarioId: admin2.id },
+    update: {},
+    create: {
+      usuarioId: admin2.id,
+      podeVerImoveis: true,
+      podeEditarImoveis: false,
+      podeVerInquilinos: false,
+      podeEditarInquilinos: false,
+      podeVerContratos: true,
+      podeEditarContratos: false,
+      podeVerPagamentos: true,
+      podeRegistrarPagamentos: false,
+      podeVerManutencao: true,
+      podeCadastrarManutencao: false,
+      podeVerAdministradores: false,
+      podeEditarPerfil: true,
+    },
+  });
+  console.log(`✓ 2 administradores: administrador1@sistema.com (acesso amplo), administrador2@sistema.com (somente leitura) / ${SENHA_PADRAO}`);
+
+  // ── 4. Inquilinos (3, cada um com login) ─────────────────────────────────
+  async function criarInquilino(email: string, nome: string, cpf: string, telefone: string) {
+    const usuario = await prisma.usuario.upsert({
+      where: { email },
+      update: {},
+      create: { nome, email, senhaHash: senhaPadraoHash, role: "inquilino", ativo: true, precisaTrocarSenha: false },
+    });
+    return prisma.inquilino.upsert({
+      where: { usuarioId: usuario.id },
+      update: {},
+      create: {
+        usuarioId: usuario.id,
+        cpf,
+        telefone,
+        contatoEmergenciaNome: "Contato de Emergência",
+        contatoEmergenciaTelefone: "11999990000",
+      },
+    });
+  }
+
+  const inquilino1 = await criarInquilino("inquilino1@sistema.com", "João Pereira", "11122233344", "11988887777");
+  const inquilino2 = await criarInquilino("inquilino2@sistema.com", "Maria Souza", "22233344455", "11977776666");
+  await criarInquilino("inquilino3@sistema.com", "Pedro Lima", "33344455566", "11966665555");
+  console.log(`✓ 3 inquilinos: inquilino1@sistema.com, inquilino2@sistema.com, inquilino3@sistema.com / ${SENHA_PADRAO}`);
+
+  // ── 5. Imoveis (3) ────────────────────────────────────────────────────────
+  const imovel1 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-1" },
+    update: {},
+    create: {
+      id: "seed-imovel-1",
+      tipoImovelId: tipos.Casa,
+      logradouro: "Rua das Flores",
+      numero: "123",
+      bairro: "Jardim Primavera",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01234-000",
+      valorAluguelBase: 2200,
+      descricao: "Casa com 3 quartos, quintal e garagem para 2 carros.",
+      status: "vago",
+    },
+  });
+  const imovel2 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-2" },
+    update: {},
+    create: {
+      id: "seed-imovel-2",
+      tipoImovelId: tipos.Apartamento,
+      logradouro: "Avenida Central",
+      numero: "456",
+      complemento: "Apto 302",
+      bairro: "Centro",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01310-000",
+      valorAluguelBase: 1800,
+      descricao: "Apartamento de 2 quartos, próximo ao metrô.",
+      status: "vago",
+    },
+  });
+  const imovel3 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-3" },
+    update: {},
+    create: {
+      id: "seed-imovel-3",
+      tipoImovelId: tipos.Kitnet,
+      logradouro: "Rua dos Estudantes",
+      numero: "789",
+      bairro: "Vila Universitária",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "05508-000",
+      valorAluguelBase: 950,
+      descricao: "Kitnet mobiliada, ideal para estudantes.",
+      status: "vago",
+    },
+  });
+  console.log("✓ 3 imóveis (Rua das Flores, Avenida Central, Rua dos Estudantes)");
+
+  // ── 6. Contratos ativos (2) com ~6 meses de historico de pagamentos ─────
+  async function criarContratoComHistorico(
+    imovelId: string,
+    inquilinoId: string,
+    mesesAtras: number,
+    diaVencimento: number,
+    valorAluguel: number,
+  ) {
+    const existente = await prisma.contrato.findFirst({ where: { imovelId, status: "ativo" } });
+    if (existente) return existente;
+
+    const dataInicio = new Date(hoje.getFullYear(), hoje.getMonth() - mesesAtras, 1);
+    const dataFim = new Date(dataInicio.getFullYear() + 1, dataInicio.getMonth(), dataInicio.getDate());
+
+    const contrato = await prisma.contrato.create({
+      data: {
+        imovelId,
+        inquilinoId,
+        dataInicio,
+        dataFim,
+        diaVencimento,
+        valorAluguel,
+        valorCaucao: valorAluguel,
+        status: "ativo",
+      },
+    });
+    await prisma.imovel.update({ where: { id: imovelId }, data: { status: "alugado" } });
+
+    await prisma.pagamento.create({
+      data: {
+        contratoId: contrato.id,
+        tipo: "caucao",
+        competencia: competenciaDe(dataInicio),
+        valorPrevisto: valorAluguel,
+        valorPago: valorAluguel,
+        dataVencimento: dataInicio,
+        dataPagamento: dataInicio,
+        status: "pago",
+        formaPagamento: "pix",
+      },
+    });
+
+    let cursor = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), 1);
+    const mesAtualCursor = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    while (cursor <= mesAtualCursor) {
+      const ano = cursor.getFullYear();
+      const mes = cursor.getMonth();
+      const ultimoDiaDoMes = new Date(ano, mes + 1, 0).getDate();
+      const dia = Math.min(diaVencimento, ultimoDiaDoMes);
+      const vencimento = new Date(ano, mes, dia);
+      const ehMesAtual = ano === hoje.getFullYear() && mes === hoje.getMonth();
+
+      const dados = ehMesAtual
+        ? {
+            status: vencimento < hojeSemHora ? ("atrasado" as const) : ("pendente" as const),
+            valorPago: null,
+            dataPagamento: null,
+            formaPagamento: null,
+          }
+        : {
+            status: "pago" as const,
+            valorPago: valorAluguel,
+            dataPagamento: vencimento,
+            formaPagamento: "pix" as const,
+          };
+
+      await prisma.pagamento.create({
+        data: {
+          contratoId: contrato.id,
+          tipo: "aluguel",
+          competencia: competenciaDe(cursor),
+          valorPrevisto: valorAluguel,
+          dataVencimento: vencimento,
+          ...dados,
+        },
+      });
+
+      cursor = new Date(ano, mes + 1, 1);
+    }
+
+    return contrato;
+  }
+
+  // diaVencimento=10 (mes atual ja passou -> demonstra pagamento em atraso)
+  await criarContratoComHistorico(imovel1.id, inquilino1.id, 6, 10, 2200);
+  // diaVencimento=25 (mes atual ainda nao chegou -> demonstra proximo vencimento)
+  await criarContratoComHistorico(imovel2.id, inquilino2.id, 5, 25, 1800);
+  console.log("✓ 2 contratos ativos com ~6 meses de histórico de pagamentos (imóvel 3 fica vago; inquilino 3 fica sem contrato)");
+
+  // ── 7. Gastos de manutencao (variados) ───────────────────────────────────
+  const gastosExistentes = await prisma.gastoManutencao.count({
+    where: { imovelId: { in: [imovel1.id, imovel2.id, imovel3.id] } },
+  });
+  if (gastosExistentes === 0) {
+    await prisma.gastoManutencao.createMany({
+      data: [
+        {
+          imovelId: imovel1.id,
+          descricao: "Pintura externa e reparo no telhado",
+          categoria: "pintura",
+          valor: 1200,
+          dataExecucao: new Date(hoje.getFullYear(), hoje.getMonth() - 2, 10),
+          dataPagamento: new Date(hoje.getFullYear(), hoje.getMonth() - 2, 15),
+          prestadorNome: "Pinturas Rápido Ltda",
+          prestadorTelefone: "11933332222",
+          status: "pago",
+          origem: "proprietario",
+        },
+        {
+          imovelId: imovel1.id,
+          descricao: "Vazamento no cano da cozinha",
+          categoria: "hidraulica",
+          valor: 350,
+          status: "aprovado",
+          origem: "chamado_inquilino",
+        },
+        {
+          imovelId: imovel2.id,
+          descricao: "Troca do quadro de disjuntores",
+          categoria: "eletrica",
+          valor: 480,
+          dataExecucao: new Date(hoje.getFullYear(), hoje.getMonth() - 1, 5),
+          dataPagamento: new Date(hoje.getFullYear(), hoje.getMonth() - 1, 8),
+          prestadorNome: "Eletricista Marcos",
+          prestadorTelefone: "11922221111",
+          status: "pago",
+          origem: "proprietario",
+        },
+        {
+          imovelId: imovel3.id,
+          descricao: "Limpeza pós-obra antes de disponibilizar para locação",
+          categoria: "limpeza",
+          valor: 200,
+          status: "orcamento",
+          origem: "proprietario",
+        },
+      ],
+    });
+  }
+  console.log("✓ gastos de manutenção (pintura, hidráulica, elétrica, limpeza)");
+
+  // ── 8. Pagamentos de administrador (ultimos 3 meses, 2 administradores) ──
+  const pagAdminExistentes = await prisma.pagamentoAdministrador.count({
+    where: { administradorId: { in: [admin1.id, admin2.id] } },
+  });
+  if (pagAdminExistentes === 0) {
+    for (const admin of [admin1, admin2]) {
+      for (let i = 2; i >= 0; i--) {
+        const dataVencimento = new Date(hoje.getFullYear(), hoje.getMonth() - i, 5);
+        const pago = i > 0;
+        await prisma.pagamentoAdministrador.create({
+          data: {
+            administradorId: admin.id,
+            mesReferencia: competenciaDe(dataVencimento),
+            dataVencimento,
+            valorPago: pago ? 800 : null,
+            dataPagamento: pago ? dataVencimento : null,
+            formaPagamento: pago ? "pix" : null,
+            status: pago ? "pago" : "pendente",
+          },
+        });
+      }
+    }
+  }
+  console.log("✓ pagamentos de administrador dos últimos 3 meses\n");
+
+  console.log("Seed concluído com sucesso!");
+}
+
+main()
+  .catch((err) => {
+    console.error("Falha ao rodar o seed:", err);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

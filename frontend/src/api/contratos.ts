@@ -1,0 +1,50 @@
+import { api } from "@/lib/api-client";
+import type { Contrato, Paginado, StatusContrato } from "@/types/domain";
+
+export interface ContratoInput {
+  imovelId: string;
+  inquilinoId: string;
+  dataInicio: string;
+  dataFim: string;
+  diaVencimento: number;
+  valorAluguel: number;
+  valorCaucao?: number;
+}
+
+export type RenovarContratoInput = Omit<ContratoInput, "imovelId" | "inquilinoId">;
+
+export interface FiltrosContrato {
+  status?: StatusContrato;
+  imovelId?: string;
+  inquilinoId?: string;
+}
+
+export async function listarContratos(filtros: FiltrosContrato = {}): Promise<Paginado<Contrato>> {
+  const { data } = await api.get("/contratos", { params: { ...filtros, pageSize: 100 } });
+  return data;
+}
+
+export async function detalharContrato(id: string): Promise<Contrato> {
+  const { data } = await api.get(`/contratos/${id}`);
+  return data;
+}
+
+export async function criarContrato(input: ContratoInput): Promise<Contrato> {
+  const { data } = await api.post("/contratos", input);
+  return data;
+}
+
+export async function encerrarContrato(id: string): Promise<Contrato> {
+  const { data } = await api.patch(`/contratos/${id}/encerrar`);
+  return data;
+}
+
+export async function rescindirContrato(id: string): Promise<Contrato> {
+  const { data } = await api.patch(`/contratos/${id}/rescindir`);
+  return data;
+}
+
+export async function renovarContrato(id: string, input: RenovarContratoInput): Promise<Contrato> {
+  const { data } = await api.post(`/contratos/${id}/renovar`, input);
+  return data;
+}

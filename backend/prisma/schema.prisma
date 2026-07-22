@@ -1,0 +1,293 @@
+// Schema do sistema de gestao de alugueis
+// SQLite nao suporta enums nativos no Prisma: campos de "opcoes fixas"
+// sao String, validados via Zod na camada de aplicacao (Fase 2/3).
+// Valores permitidos ficam documentados em comentario ao lado do campo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Usuarios e autenticacao ─────────────────────────────────────────────
+
+model Usuario {
+  id                 String   @id @default(cuid())
+  nome               String
+  email              String   @unique
+  senhaHash          String
+  role               String // proprietario | administrador | inquilino
+  ativo              Boolean  @default(true)
+  precisaTrocarSenha Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  permissaoAdministrador  PermissaoAdministrador?
+  pagamentosComoAdmin     PagamentoAdministrador[] @relation("AdministradorPagamentos")
+  inquilino               Inquilino?
+  refreshTokens           RefreshToken[]
+  logsAuditoria           LogAuditoria[]
+  recibosGerados          ReciboPdf[]              @relation("GeradoPor")
+
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  usuarioId String
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([usuarioId])
+}
+
+// ── Permissoes granulares do Administrador ──────────────────────────────
+
+model PermissaoAdministrador {
+  id        String  @id @default(cuid())
+  usuarioId String  @unique
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  podeVerImoveis          Boolean @default(false)
+  podeEditarImoveis       Boolean @default(false)
+  podeVerInquilinos       Boolean @default(false)
+  podeEditarInquilinos    Boolean @default(false)
+  podeVerContratos        Boolean @default(false)
+  podeEditarContratos     Boolean @default(false)
+  podeVerPagamentos       Boolean @default(false)
+  podeRegistrarPagamentos Boolean @default(false)
+  podeVerManutencao       Boolean @default(false)
+  podeCadastrarManutencao Boolean @default(false)
+  podeVerAdministradores  Boolean @default(false)
+  podeEditarPerfil        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ── Imoveis ──────────────────────────────────────────────────────────────
+
+model TipoImovel {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  descricao String?
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  imoveis Imovel[]
+}
+
+model Imovel {
+  id           String     @id @default(cuid())
+  tipoImovelId String
+  tipoImovel   TipoImovel @relation(fields: [tipoImovelId], references: [id])
+
+  logradouro String
+  numero     String
+  complemento String?
+  bairro     String
+  cidade     String
+  estado     String
+  cep        String
+
+  valorAluguelBase Float
+  descricao        String?
+  status           String   @default("vago") // vago | alugado | manutencao | inativo
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fotos            ImovelFoto[]
+  contratos        Contrato[]
+  gastosManutencao GastoManutencao[]
+
+  @@index([tipoImovelId])
+  @@index([status])
+}
+
+model ImovelFoto {
+  id        String   @id @default(cuid())
+  imovelId  String
+  imovel    Imovel   @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  url       String
+  createdAt DateTime @default(now())
+
+  @@index([imovelId])
+}
+
+// ── Inquilinos e contratos ───────────────────────────────────────────────
+
+model Inquilino {
+  id        String  @id @default(cuid())
+  usuarioId String  @unique
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  cpf                       String  @unique
+  telefone                  String
+  contatoEmergenciaNome     String?
+  contatoEmergenciaTelefone String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contratos Contrato[]
+}
+
+model Contrato {
+  id          String    @id @default(cuid())
+  imovelId    String
+  imovel      Imovel    @relation(fields: [imovelId], references: [id])
+  inquilinoId String
+  inquilino   Inquilino @relation(fields: [inquilinoId], references: [id])
+
+  dataInicio    DateTime
+  dataFim       DateTime
+  diaVencimento Int
+  valorAluguel  Float
+  valorCaucao   Float?
+
+  status String @default("ativo") // ativo | encerrado | rescindido | renovado
+
+  // Auto-relacao para renovacao: o novo contrato aponta para o anterior.
+  contratoAnteriorId String?   @unique
+  contratoAnterior   Contrato? @relation("RenovacaoContrato", fields: [contratoAnteriorId], references: [id])
+  contratoRenovado   Contrato? @relation("RenovacaoContrato")
+
+  arquivoPdfUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pagamentos Pagamento[]
+
+  @@index([imovelId])
+  @@index([inquilinoId])
+  @@index([status])
+}
+
+// ── Financeiro: pagamentos de aluguel ────────────────────────────────────
+
+model Pagamento {
+  id         String   @id @default(cuid())
+  contratoId String
+  contrato   Contrato @relation(fields: [contratoId], references: [id])
+
+  tipo           String // aluguel | caucao | multa | outro
+  competencia    String // formato "YYYY-MM"
+  valorPrevisto  Float
+  valorPago      Float?
+  dataVencimento DateTime
+  dataPagamento  DateTime?
+  status         String  @default("pendente") // pendente | pago | atrasado
+  formaPagamento String? // pix | transferencia | dinheiro | boleto | outro
+  observacoes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recibo ReciboPdf?
+
+  @@index([contratoId])
+  @@index([competencia])
+  @@index([status])
+}
+
+// ── Financeiro: manutencao de imoveis ────────────────────────────────────
+
+model GastoManutencao {
+  id       String @id @default(cuid())
+  imovelId String
+  imovel   Imovel @relation(fields: [imovelId], references: [id])
+
+  descricao    String
+  categoria    String // pintura | eletrica | hidraulica | estrutural | limpeza | jardinagem | outros
+  valor        Float
+  dataExecucao DateTime?
+
+  prestadorNome      String?
+  prestadorDocumento String?
+  prestadorTelefone  String?
+
+  status            String    @default("orcamento") // orcamento | aprovado | executado | pago
+  dataPagamento     DateTime?
+  comprovantePdfUrl String?
+  observacoes       String?
+
+  // Diferencia gasto criado pelo proprietario de chamado aberto pelo inquilino.
+  origem String @default("proprietario") // proprietario | chamado_inquilino
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([imovelId])
+  @@index([status])
+  @@index([categoria])
+}
+
+// ── Financeiro: mensalidade do administrador ─────────────────────────────
+// Visivel/editavel apenas pelo Proprietario (regra aplicada no RBAC, nao no schema).
+
+model PagamentoAdministrador {
+  id              String  @id @default(cuid())
+  administradorId String
+  administrador   Usuario @relation("AdministradorPagamentos", fields: [administradorId], references: [id])
+
+  mesReferencia  String // formato "YYYY-MM"
+  valorPago      Float?
+  dataPagamento  DateTime?
+  dataVencimento DateTime
+  status         String  @default("pendente") // pago | pendente | atrasado
+  formaPagamento String? // pix | transferencia | dinheiro
+  observacoes    String?
+  comprovantePdfUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([administradorId])
+  @@index([mesReferencia])
+}
+
+// ── PDFs gerados ──────────────────────────────────────────────────────────
+
+model ReciboPdf {
+  id          String    @id @default(cuid())
+  pagamentoId String?   @unique
+  pagamento   Pagamento? @relation(fields: [pagamentoId], references: [id])
+
+  tipo           String // recibo_pagamento | contrato
+  caminhoArquivo String
+  geradoEm       DateTime @default(now())
+
+  geradoPorId String
+  geradoPor   Usuario @relation("GeradoPor", fields: [geradoPorId], references: [id])
+}
+
+// ── Auditoria ────────────────────────────────────────────────────────────
+
+model LogAuditoria {
+  id        String   @id @default(cuid())
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  acao       String // ex: CREATE_IMOVEL | UPDATE_PAGAMENTO | DELETE_CONTRATO
+  entidade   String // ex: Imovel, Pagamento, Contrato
+  entidadeId String?
+
+  // JSON serializado manualmente (SQLite nao suporta o tipo Json no Prisma).
+  dadosAntes  String?
+  dadosDepois String?
+
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId])
+  @@index([entidade, entidadeId])
+}
