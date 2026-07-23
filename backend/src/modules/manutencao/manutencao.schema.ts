@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CATEGORIA_MANUTENCAO, STATUS_MANUTENCAO } from "../../constants/dominio";
+import { CATEGORIA_MANUTENCAO, STATUS_MANUTENCAO, FORMA_PAGAMENTO, RECORRENCIA_MANUTENCAO } from "../../constants/dominio";
 
 export const criarGastoManutencaoSchema = z.object({
   imovelId: z.string().min(1),
@@ -11,9 +11,31 @@ export const criarGastoManutencaoSchema = z.object({
   prestadorDocumento: z.string().optional(),
   prestadorTelefone: z.string().optional(),
   observacoes: z.string().optional(),
+  recorrencia: z.enum(RECORRENCIA_MANUTENCAO).optional(),
+  dataFimRecorrencia: z.coerce.date().optional(),
 });
 
-export const atualizarGastoManutencaoSchema = criarGastoManutencaoSchema.partial().omit({ imovelId: true });
+// Edicao completa (corrigir erro de cadastro): diferente de
+// atualizarStatusManutencaoSchema (usado pelo fluxo rapido de avanco de
+// status), aqui TODOS os campos - incluindo imovelId e status - podem ser
+// alterados livremente, sem a regra de "nao retroceder status" (ver
+// manutencao.service.ts: atualizar()).
+export const atualizarGastoManutencaoSchema = z.object({
+  imovelId: z.string().min(1).optional(),
+  descricao: z.string().min(3).optional(),
+  categoria: z.enum(CATEGORIA_MANUTENCAO).optional(),
+  valor: z.number().positive().optional(),
+  dataExecucao: z.coerce.date().nullable().optional(),
+  prestadorNome: z.string().nullable().optional(),
+  prestadorDocumento: z.string().nullable().optional(),
+  prestadorTelefone: z.string().nullable().optional(),
+  observacoes: z.string().nullable().optional(),
+  status: z.enum(STATUS_MANUTENCAO).optional(),
+  dataPagamento: z.coerce.date().nullable().optional(),
+  formaPagamento: z.enum(FORMA_PAGAMENTO).nullable().optional(),
+  recorrencia: z.enum(RECORRENCIA_MANUTENCAO).optional(),
+  dataFimRecorrencia: z.coerce.date().nullable().optional(),
+});
 
 export const atualizarStatusManutencaoSchema = z.object({
   status: z.enum(STATUS_MANUTENCAO),
@@ -26,4 +48,5 @@ export const listarManutencaoQuerySchema = z.object({
   categoria: z.enum(CATEGORIA_MANUTENCAO).optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
+  apenasExcluidos: z.coerce.boolean().optional(),
 });

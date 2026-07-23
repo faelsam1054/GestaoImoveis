@@ -17,9 +17,13 @@ import { ImovelDetalhePage } from "@/pages/gestao/imoveis/ImovelDetalhePage";
 import { InquilinosPage } from "@/pages/gestao/inquilinos/InquilinosPage";
 import { ContratosPage } from "@/pages/gestao/contratos/ContratosPage";
 import { ContratoDetalhePage } from "@/pages/gestao/contratos/ContratoDetalhePage";
+import { ContratosPendentesPage } from "@/pages/gestao/contratos/ContratosPendentesPage";
+import { EmailsEnviadosPage } from "@/pages/gestao/configuracoes/EmailsEnviadosPage";
 import { PagamentosPage } from "@/pages/gestao/pagamentos/PagamentosPage";
 import { ManutencaoPage } from "@/pages/gestao/manutencao/ManutencaoPage";
+import { ManutencaoDetalhePage } from "@/pages/gestao/manutencao/ManutencaoDetalhePage";
 import { AdministradoresPage } from "@/pages/gestao/administradores/AdministradoresPage";
+import { ProprietariosPage } from "@/pages/gestao/proprietarios/ProprietariosPage";
 import { PagamentosAdminPage } from "@/pages/gestao/administradores/PagamentosAdminPage";
 import { ConfiguracoesPage } from "@/pages/gestao/configuracoes/ConfiguracoesPage";
 import { PerfilPage } from "@/pages/gestao/perfil/PerfilPage";
@@ -47,6 +51,9 @@ export function AppRoutes() {
             <Route path="/relatorios" element={<RelatoriosPage />} />
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
             <Route path="/pagamentos-admin" element={<PagamentosAdminPage />} />
+            <Route path="/contratos-pendentes" element={<ContratosPendentesPage />} />
+            <Route path="/emails-enviados" element={<EmailsEnviadosPage />} />
+            <Route path="/proprietarios" element={<ProprietariosPage />} />
           </Route>
 
           <Route element={<PermissaoRoute permissao="podeVerImoveis" />}>
@@ -65,6 +72,7 @@ export function AppRoutes() {
           </Route>
           <Route element={<PermissaoRoute permissao="podeVerManutencao" />}>
             <Route path="/manutencao" element={<ManutencaoPage />} />
+            <Route path="/manutencao/:id" element={<ManutencaoDetalhePage />} />
           </Route>
           <Route element={<PermissaoRoute permissao="podeVerAdministradores" />}>
             <Route path="/administradores" element={<AdministradoresPage />} />

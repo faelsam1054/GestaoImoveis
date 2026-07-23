@@ -33,6 +33,14 @@ export async function atualizarAdministrador(
 }
 
 export async function desativarAdministrador(id: string): Promise<void> {
+  await api.patch(`/administradores/${id}/desativar`);
+}
+
+export async function reativarAdministrador(id: string): Promise<void> {
+  await api.patch(`/administradores/${id}/reativar`);
+}
+
+export async function excluirAdministrador(id: string): Promise<void> {
   await api.delete(`/administradores/${id}`);
 }
 

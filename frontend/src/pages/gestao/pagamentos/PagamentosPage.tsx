@@ -1,26 +1,32 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, Wallet, Undo2 } from "lucide-react";
 import {
   listarPagamentos,
   criarPagamentoAvulso,
   marcarPagamentoComoPago,
+  desfazerPagamento,
   type PagamentoAvulsoInput,
   type MarcarPagoInput,
+  type FiltrosPagamento,
 } from "@/api/pagamentos";
 import { listarContratos } from "@/api/contratos";
 import { useAuth } from "@/contexts/AuthContext";
-import { FORMA_PAGAMENTO, STATUS_PAGAMENTO, TIPO_PAGAMENTO, type Pagamento } from "@/types/domain";
+import { FORMA_PAGAMENTO, TIPO_PAGAMENTO, type Pagamento } from "@/types/domain";
 import { formatarCompetencia, formatarData, formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { CurrencyInput } from "@/components/currency-input";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -40,12 +46,51 @@ const AVULSO_VAZIO: PagamentoAvulsoInput = {
   observacoes: "",
 };
 
+// new Date(ano, mes, 1) com mes=12 rola automaticamente pro ano seguinte
+// (dezembro -> janeiro), entao a virada de ano e tratada de graca.
+function competenciaDe(data: Date): string {
+  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+function competenciaMesAtual(): string {
+  return competenciaDe(new Date());
+}
+function competenciaProximoMes(): string {
+  const hoje = new Date();
+  return competenciaDe(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1));
+}
+
+type AbaPagamento = "esteMes" | "proximoMes" | "atrasados" | "todos" | "pagos";
+
+const ABAS: { valor: AbaPagamento; label: string }[] = [
+  { valor: "esteMes", label: "Este Mês" },
+  { valor: "proximoMes", label: "Próximo Mês" },
+  { valor: "atrasados", label: "Atrasados" },
+  { valor: "todos", label: "Todos" },
+  { valor: "pagos", label: "Pagos" },
+];
+
+function filtrosDaAba(aba: AbaPagamento, mesCustom: string): FiltrosPagamento {
+  switch (aba) {
+    case "atrasados":
+      return { status: "atrasado" };
+    case "todos":
+      return { status: "pendente" };
+    case "pagos":
+      return { status: "pago" };
+    case "esteMes":
+    case "proximoMes":
+    default:
+      return { status: "pendente", competencia: mesCustom };
+  }
+}
+
 export function PagamentosPage() {
   const { usuario } = useAuth();
   const podeRegistrar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeRegistrarPagamentos;
   const queryClient = useQueryClient();
 
-  const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [aba, setAba] = useState<AbaPagamento>("proximoMes");
+  const [mesCustom, setMesCustom] = useState<string>(competenciaProximoMes());
   const [dialogAvulsoAberto, setDialogAvulsoAberto] = useState(false);
   const [formAvulso, setFormAvulso] = useState<PagamentoAvulsoInput>(AVULSO_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
@@ -57,9 +102,55 @@ export function PagamentosPage() {
     observacoes: "",
   });
 
+  const [desfazendo, setDesfazendo] = useState<Pagamento | null>(null);
+  const [removerRecibo, setRemoverRecibo] = useState(true);
+
+  function selecionarAba(novaAba: AbaPagamento) {
+    setAba(novaAba);
+    if (novaAba === "esteMes") setMesCustom(competenciaMesAtual());
+    if (novaAba === "proximoMes") setMesCustom(competenciaProximoMes());
+  }
+
+  const mostraSeletorMes = aba === "esteMes" || aba === "proximoMes";
+
+  // Contadores de cada aba: sempre fixos no mes "canonico" da aba (mes atual/
+  // seguinte), independente do seletor de mes customizado - assim o label
+  // "Próximo Mês (5)" nao muda so porque o usuario esta navegando por outro
+  // mes na aba ativa.
+  const queryEsteMes = useQuery({
+    queryKey: ["pagamentos", "pendente", competenciaMesAtual()],
+    queryFn: () => listarPagamentos({ status: "pendente", competencia: competenciaMesAtual() }),
+  });
+  const queryProximoMes = useQuery({
+    queryKey: ["pagamentos", "pendente", competenciaProximoMes()],
+    queryFn: () => listarPagamentos({ status: "pendente", competencia: competenciaProximoMes() }),
+  });
+  const queryAtrasados = useQuery({
+    queryKey: ["pagamentos", "atrasado"],
+    queryFn: () => listarPagamentos({ status: "atrasado" }),
+  });
+  const queryTodosPendentes = useQuery({
+    queryKey: ["pagamentos", "pendente", "todos"],
+    queryFn: () => listarPagamentos({ status: "pendente" }),
+  });
+  const queryPagos = useQuery({
+    queryKey: ["pagamentos", "pago"],
+    queryFn: () => listarPagamentos({ status: "pago" }),
+  });
+
+  const contagens: Record<AbaPagamento, number | undefined> = {
+    esteMes: queryEsteMes.data?.paginacao.total,
+    proximoMes: queryProximoMes.data?.paginacao.total,
+    atrasados: queryAtrasados.data?.paginacao.total,
+    todos: queryTodosPendentes.data?.paginacao.total,
+    pagos: queryPagos.data?.paginacao.total,
+  };
+
+  // Conteudo exibido na tabela: reflete a aba ativa + o mes customizado (que
+  // so diverge do "canonico" se o usuario mexer no seletor de mes).
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["pagamentos", statusFiltro],
-    queryFn: () => listarPagamentos({ status: statusFiltro === "todos" ? undefined : (statusFiltro as Pagamento["status"]) }),
+    queryKey: ["pagamentos", "ativo", aba, mesCustom],
+    queryFn: () => listarPagamentos(filtrosDaAba(aba, mesCustom)),
   });
 
   const { data: contratosAtivos } = useQuery({
@@ -92,6 +183,17 @@ export function PagamentosPage() {
     onError: (err) => setErro(mensagemErro(err)),
   });
 
+  const mutDesfazer = useMutation({
+    mutationFn: ({ id, removerRecibo }: { id: string; removerRecibo: boolean }) =>
+      desfazerPagamento(id, removerRecibo),
+    onSuccess: async () => {
+      toast.success("Pagamento desfeito com sucesso");
+      await invalidar();
+      setDesfazendo(null);
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
   function abrirNovoAvulso() {
     setFormAvulso(AVULSO_VAZIO);
     setErro(null);
@@ -102,6 +204,11 @@ export function PagamentosPage() {
     setPagando(pagamento);
     setFormPagar({ valorPago: pagamento.valorPrevisto, formaPagamento: "pix", observacoes: "" });
     setErro(null);
+  }
+
+  function abrirDesfazer(pagamento: Pagamento) {
+    setDesfazendo(pagamento);
+    setRemoverRecibo(true);
   }
 
   const pagamentos = resultado?.dados ?? [];
@@ -121,69 +228,147 @@ export function PagamentosPage() {
         }
       />
 
-      <div className="mb-4 max-w-xs">
-        <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-          <SelectTrigger>
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os status</SelectItem>
-            {STATUS_PAGAMENTO.map((s) => (
-              <SelectItem key={s} value={s} className="capitalize">
-                {s}
-              </SelectItem>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <Tabs value={aba} onValueChange={(v) => selecionarAba(v as AbaPagamento)}>
+          <TabsList>
+            {ABAS.map(({ valor, label }) => (
+              <TabsTrigger key={valor} value={valor}>
+                {label}
+                {contagens[valor] !== undefined ? ` (${contagens[valor]})` : ""}
+              </TabsTrigger>
             ))}
-          </SelectContent>
-        </Select>
+          </TabsList>
+        </Tabs>
+
+        {mostraSeletorMes && (
+          <div className="flex items-center gap-2">
+            <Label htmlFor="mesCustom" className="text-sm text-muted-foreground">
+              Mês:
+            </Label>
+            <Input
+              id="mesCustom"
+              type="month"
+              className="w-40"
+              value={mesCustom}
+              onChange={(e) => setMesCustom(e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Imóvel / Inquilino</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Competência</TableHead>
-              <TableHead>Vencimento</TableHead>
-              <TableHead>Valor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && pagamentos.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  Nenhum pagamento encontrado.
-                </TableCell>
-              </TableRow>
-            )}
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && pagamentos.length === 0 && (
+        <EmptyState
+          icon={Wallet}
+          titulo="Nenhum pagamento encontrado"
+          descricao="Ajuste os filtros para ver outros pagamentos."
+        />
+      )}
+
+      {!isLoading && pagamentos.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Imóvel / Inquilino</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Competência</TableHead>
+                  <TableHead>Vencimento</TableHead>
+                  <TableHead>Valor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pagamentos.map((pagamento) => (
+                  <TableRow key={pagamento.id}>
+                    <TableCell>
+                      <p className="font-medium">
+                        {pagamento.contrato?.imovel?.logradouro}, {pagamento.contrato?.imovel?.numero}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{pagamento.contrato?.inquilino?.usuario?.nome}</p>
+                    </TableCell>
+                    <TableCell className="capitalize">{pagamento.tipo}</TableCell>
+                    <TableCell>{formatarCompetencia(pagamento.competencia)}</TableCell>
+                    <TableCell>{formatarData(pagamento.dataVencimento)}</TableCell>
+                    <TableCell>{formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={pagamento.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {podeRegistrar && pagamento.status !== "pago" && (
+                        <Button variant="outline" size="sm" onClick={() => abrirPagar(pagamento)}>
+                          Marcar como pago
+                        </Button>
+                      )}
+                      {podeRegistrar && pagamento.status === "pago" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-amber-600 dark:text-amber-400"
+                          onClick={() => abrirDesfazer(pagamento)}
+                        >
+                          <Undo2 className="h-4 w-4" />
+                          Desfazer Pagamento
+                        </Button>
+                      )}
+                      {pagamento.recibo && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={pagamento.recibo.caminhoArquivo} target="_blank" rel="noreferrer">
+                            Recibo
+                          </a>
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
             {pagamentos.map((pagamento) => (
-              <TableRow key={pagamento.id}>
-                <TableCell>
-                  <p className="font-medium">
-                    {pagamento.contrato?.imovel?.logradouro}, {pagamento.contrato?.imovel?.numero}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{pagamento.contrato?.inquilino?.usuario?.nome}</p>
-                </TableCell>
-                <TableCell className="capitalize">{pagamento.tipo}</TableCell>
-                <TableCell>{formatarCompetencia(pagamento.competencia)}</TableCell>
-                <TableCell>{formatarData(pagamento.dataVencimento)}</TableCell>
-                <TableCell>{formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}</TableCell>
-                <TableCell>
+              <MobileRowCard key={pagamento.id}>
+                <MobileRowCardHeader>
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {pagamento.contrato?.imovel?.logradouro}, {pagamento.contrato?.imovel?.numero}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {pagamento.contrato?.inquilino?.usuario?.nome}
+                    </p>
+                  </div>
                   <StatusBadge status={pagamento.status} />
-                </TableCell>
-                <TableCell className="text-right">
+                </MobileRowCardHeader>
+                <MobileRowField label="Tipo" value={<span className="capitalize">{pagamento.tipo}</span>} />
+                <MobileRowField label="Competência" value={formatarCompetencia(pagamento.competencia)} />
+                <MobileRowField label="Vencimento" value={formatarData(pagamento.dataVencimento)} />
+                <MobileRowField
+                  label="Valor"
+                  value={formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}
+                />
+                <MobileRowActions>
                   {podeRegistrar && pagamento.status !== "pago" && (
                     <Button variant="outline" size="sm" onClick={() => abrirPagar(pagamento)}>
                       Marcar como pago
+                    </Button>
+                  )}
+                  {podeRegistrar && pagamento.status === "pago" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-amber-600 dark:text-amber-400"
+                      onClick={() => abrirDesfazer(pagamento)}
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      Desfazer Pagamento
                     </Button>
                   )}
                   {pagamento.recibo && (
@@ -193,12 +378,12 @@ export function PagamentosPage() {
                       </a>
                     </Button>
                   )}
-                </TableCell>
-              </TableRow>
+                </MobileRowActions>
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Lancamento avulso */}
       <Dialog open={dialogAvulsoAberto} onOpenChange={setDialogAvulsoAberto}>
@@ -361,6 +546,34 @@ export function PagamentosPage() {
               disabled={mutPagar.isPending || formPagar.valorPago <= 0}
             >
               {mutPagar.isPending ? "Salvando..." : "Confirmar pagamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Desfazer pagamento */}
+      <Dialog open={Boolean(desfazendo)} onOpenChange={(open) => !open && setDesfazendo(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Desfazer Pagamento</DialogTitle>
+            <DialogDescription>
+              O pagamento será marcado como pendente novamente. Deseja também remover o recibo gerado?
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={removerRecibo} onCheckedChange={(v) => setRemoverRecibo(v === true)} />
+            Remover recibo PDF também
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDesfazendo(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => desfazendo && mutDesfazer.mutate({ id: desfazendo.id, removerRecibo })}
+              disabled={mutDesfazer.isPending}
+            >
+              {mutDesfazer.isPending ? "Desfazendo..." : "Desfazer Pagamento"}
             </Button>
           </DialogFooter>
         </DialogContent>

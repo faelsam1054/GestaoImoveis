@@ -11,6 +11,15 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
   UPLOADS_DIR: z.string().default("./uploads"),
+  EMAIL_MOCK: z
+    .string()
+    .default("true")
+    .transform((v) => v === "true"),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default("Sistema de Alugueis <no-reply@sistema-alugueis.local>"),
 });
 
 const parsed = envSchema.safeParse(process.env);

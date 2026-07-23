@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Tags } from "lucide-react";
 import {
   listarTiposImovel,
   criarTipoImovel,
@@ -14,6 +14,8 @@ import type { TipoImovel } from "@/types/domain";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -126,41 +128,68 @@ export function TiposImovelPage() {
         <Label htmlFor="mostrar-inativos">Mostrar tipos desativados</Label>
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Descrição</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && tipos?.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Nenhum tipo de imóvel cadastrado.
-                </TableCell>
-              </TableRow>
-            )}
-            {tipos?.map((tipo) => (
-              <TableRow key={tipo.id}>
-                <TableCell className="font-medium">{tipo.nome}</TableCell>
-                <TableCell className="text-muted-foreground">{tipo.descricao || "-"}</TableCell>
-                <TableCell>
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && tipos?.length === 0 && (
+        <EmptyState icon={Tags} titulo="Nenhum tipo de imóvel cadastrado" />
+      )}
+
+      {!isLoading && tipos && tipos.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tipos.map((tipo) => (
+                  <TableRow key={tipo.id}>
+                    <TableCell className="font-medium">{tipo.nome}</TableCell>
+                    <TableCell className="text-muted-foreground">{tipo.descricao || "-"}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={tipo.ativo ? "ativo" : "inativo"} />
+                    </TableCell>
+                    <TableCell className="flex justify-end gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => abrirEdicao(tipo)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => mutToggleAtivo.mutate(tipo)}
+                        disabled={mutToggleAtivo.isPending}
+                      >
+                        {tipo.ativo ? "Desativar" : "Reativar"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
+            {tipos.map((tipo) => (
+              <MobileRowCard key={tipo.id}>
+                <MobileRowCardHeader>
+                  <p className="font-medium">{tipo.nome}</p>
                   <StatusBadge status={tipo.ativo ? "ativo" : "inativo"} />
-                </TableCell>
-                <TableCell className="flex justify-end gap-2">
-                  <Button variant="ghost" size="icon" onClick={() => abrirEdicao(tipo)}>
+                </MobileRowCardHeader>
+                <MobileRowField label="Descrição" value={tipo.descricao || "-"} />
+                <MobileRowActions>
+                  <Button variant="ghost" size="sm" onClick={() => abrirEdicao(tipo)}>
                     <Pencil className="h-4 w-4" />
+                    Editar
                   </Button>
                   <Button
                     variant="outline"
@@ -170,12 +199,12 @@ export function TiposImovelPage() {
                   >
                     {tipo.ativo ? "Desativar" : "Reativar"}
                   </Button>
-                </TableCell>
-              </TableRow>
+                </MobileRowActions>
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
         <DialogContent>

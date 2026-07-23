@@ -1,7 +1,8 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
-import { ORDEM_STATUS_MANUTENCAO, type StatusManutencao } from "../../constants/dominio";
+import { removerArquivoFisico } from "../../middlewares/upload.middleware";
+import { ORDEM_STATUS_MANUTENCAO, MESES_POR_RECORRENCIA, type StatusManutencao } from "../../constants/dominio";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import type {
   criarGastoManutencaoSchema,
@@ -18,15 +19,69 @@ interface FiltrosManutencao {
   page?: string;
   pageSize?: string;
   imovelIdsPermitidos?: string[] | null;
+  apenasExcluidos?: boolean;
+}
+
+// Geracao preguicosa das proximas instancias de manutencoes recorrentes,
+// disparada a cada listagem (nao ha cron/job agendado nesse projeto). So
+// origens (manutencaoOrigemId null, recorrencia != "unica", ativo=true, nao
+// excluidas) sao consideradas; cada instancia gerada aponta de volta pra
+// origem e nasce como "unica" (nao gera sua propria cadeia de recorrencia).
+async function gerarProximasRecorrencias() {
+  const origens = await prisma.gastoManutencao.findMany({
+    where: { manutencaoOrigemId: null, recorrencia: { not: "unica" }, ativo: true, excluidoEm: null },
+  });
+
+  const limiteGeracao = new Date();
+  limiteGeracao.setMonth(limiteGeracao.getMonth() + 3);
+
+  for (const origem of origens) {
+    const incrementoMeses = MESES_POR_RECORRENCIA[origem.recorrencia as keyof typeof MESES_POR_RECORRENCIA] ?? 1;
+
+    const ultimaGerada = await prisma.gastoManutencao.findFirst({
+      where: { manutencaoOrigemId: origem.id },
+      orderBy: { dataExecucao: "desc" },
+    });
+
+    const dataBase = ultimaGerada?.dataExecucao ?? origem.dataExecucao ?? origem.createdAt;
+    const proximaData = new Date(dataBase);
+    proximaData.setMonth(proximaData.getMonth() + incrementoMeses);
+
+    while (proximaData <= limiteGeracao) {
+      if (origem.dataFimRecorrencia && proximaData > origem.dataFimRecorrencia) break;
+
+      await prisma.gastoManutencao.create({
+        data: {
+          imovelId: origem.imovelId,
+          descricao: origem.descricao,
+          categoria: origem.categoria,
+          valor: origem.valor,
+          dataExecucao: new Date(proximaData),
+          prestadorNome: origem.prestadorNome,
+          prestadorDocumento: origem.prestadorDocumento,
+          prestadorTelefone: origem.prestadorTelefone,
+          observacoes: origem.observacoes,
+          origem: origem.origem,
+          status: "orcamento",
+          recorrencia: "unica",
+          manutencaoOrigemId: origem.id,
+        },
+      });
+
+      proximaData.setMonth(proximaData.getMonth() + incrementoMeses);
+    }
+  }
 }
 
 export async function listar(filtros: FiltrosManutencao) {
+  await gerarProximasRecorrencias();
   const paginacao = parsePaginacao(filtros);
 
   const where: Prisma.GastoManutencaoWhereInput = {
     imovelId: combinarFiltroImovel(filtros.imovelId, filtros.imovelIdsPermitidos ?? null),
     status: filtros.status,
     categoria: filtros.categoria,
+    excluidoEm: filtros.apenasExcluidos ? { not: null } : null,
   };
 
   const [dados, total] = await Promise.all([
@@ -62,12 +117,43 @@ export async function criar(data: z.infer<typeof criarGastoManutencaoSchema>, or
   });
 }
 
+// Edicao completa, para corrigir erros de cadastro - por isso, ao contrario
+// de atualizarStatus(), NAO impede retroceder o status (ex: desfazer um
+// "pago" registrado por engano) nem bloqueia editar um gasto ja pago.
 export async function atualizar(id: string, data: z.infer<typeof atualizarGastoManutencaoSchema>) {
-  const gasto = await buscarPorIdOuFalhar(id);
-  if (gasto.status === "pago") {
-    throw new AppError("Nao e possivel editar um gasto de manutencao ja pago", 409);
+  const antes = await buscarPorIdOuFalhar(id);
+
+  if (data.imovelId && data.imovelId !== antes.imovelId) {
+    const novoImovel = await prisma.imovel.findUnique({ where: { id: data.imovelId } });
+    if (!novoImovel) throw new AppError("Imovel nao encontrado", 400);
   }
-  return prisma.gastoManutencao.update({ where: { id }, data, include: { imovel: true } });
+
+  const novoStatus = data.status ?? antes.status;
+  const dataExecucaoEfetiva = data.dataExecucao !== undefined ? data.dataExecucao : antes.dataExecucao;
+  let dataPagamentoEfetiva = data.dataPagamento !== undefined ? data.dataPagamento : antes.dataPagamento;
+  let formaPagamentoEfetiva = data.formaPagamento !== undefined ? data.formaPagamento : antes.formaPagamento;
+
+  if (novoStatus === "pago") {
+    if (!dataPagamentoEfetiva || !formaPagamentoEfetiva) {
+      throw new AppError("Para marcar como pago, informe data de pagamento e forma de pagamento", 400);
+    }
+  } else if (antes.status === "pago" && novoStatus !== "pago") {
+    // Saindo de "pago": limpa os dados de pagamento. A confirmacao dessa
+    // acao (perguntar ao usuario se tem certeza) e responsabilidade do
+    // frontend, antes de enviar a requisicao.
+    dataPagamentoEfetiva = null;
+    formaPagamentoEfetiva = null;
+  }
+
+  if (dataPagamentoEfetiva && dataExecucaoEfetiva && dataPagamentoEfetiva < dataExecucaoEfetiva) {
+    throw new AppError("A data de pagamento não pode ser anterior à data de execução", 400);
+  }
+
+  return prisma.gastoManutencao.update({
+    where: { id },
+    data: { ...data, dataPagamento: dataPagamentoEfetiva, formaPagamento: formaPagamentoEfetiva },
+    include: { imovel: true },
+  });
 }
 
 export async function atualizarStatus(id: string, data: z.infer<typeof atualizarStatusManutencaoSchema>) {
@@ -88,7 +174,69 @@ export async function atualizarStatus(id: string, data: z.infer<typeof atualizar
   });
 }
 
-export async function anexarComprovante(id: string, url: string) {
+export async function anexarComprovante(id: string, url: string, nomeOriginal: string, tamanho: number) {
+  const antes = await buscarPorIdOuFalhar(id);
+  removerArquivoFisico(antes.comprovantePdfUrl);
+  return prisma.gastoManutencao.update({
+    where: { id },
+    data: {
+      comprovantePdfUrl: url,
+      comprovanteNomeOriginal: nomeOriginal,
+      comprovanteTamanho: tamanho,
+      comprovanteUploadEm: new Date(),
+    },
+    include: { imovel: true },
+  });
+}
+
+export async function removerComprovante(id: string) {
+  const antes = await buscarPorIdOuFalhar(id);
+  removerArquivoFisico(antes.comprovantePdfUrl);
+  return prisma.gastoManutencao.update({
+    where: { id },
+    data: {
+      comprovantePdfUrl: null,
+      comprovanteNomeOriginal: null,
+      comprovanteTamanho: null,
+      comprovanteUploadEm: null,
+    },
+    include: { imovel: true },
+  });
+}
+
+// Soft delete (mesmo padrao do Inquilino): preserva o registro financeiro,
+// so oculta da listagem padrao. O arquivo de comprovante, porem, e removido
+// do disco de verdade - nao ha motivo pra manter o PDF orfao.
+export async function excluir(id: string) {
+  const gasto = await buscarPorIdOuFalhar(id);
+  if (gasto.excluidoEm) throw new AppError("Este gasto de manutencao ja esta excluido", 409);
+
+  removerArquivoFisico(gasto.comprovantePdfUrl);
+  await prisma.gastoManutencao.update({ where: { id }, data: { excluidoEm: new Date() } });
+}
+
+function garantirEhOrigemRecorrente(gasto: { recorrencia: string; manutencaoOrigemId: string | null }) {
+  if (gasto.recorrencia === "unica" || gasto.manutencaoOrigemId) {
+    throw new AppError("Esta manutencao nao e uma recorrencia original", 400);
+  }
+}
+
+export async function pausarRecorrencia(id: string) {
+  const gasto = await buscarPorIdOuFalhar(id);
+  garantirEhOrigemRecorrente(gasto);
+  return prisma.gastoManutencao.update({ where: { id }, data: { ativo: false }, include: { imovel: true } });
+}
+
+export async function retomarRecorrencia(id: string) {
+  const gasto = await buscarPorIdOuFalhar(id);
+  garantirEhOrigemRecorrente(gasto);
+  return prisma.gastoManutencao.update({ where: { id }, data: { ativo: true }, include: { imovel: true } });
+}
+
+export async function listarRecorrencias(id: string) {
   await buscarPorIdOuFalhar(id);
-  return prisma.gastoManutencao.update({ where: { id }, data: { comprovantePdfUrl: url } });
+  return prisma.gastoManutencao.findMany({
+    where: { manutencaoOrigemId: id },
+    orderBy: { dataExecucao: "asc" },
+  });
 }

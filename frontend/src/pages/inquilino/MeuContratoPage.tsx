@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Download, TriangleAlert } from "lucide-react";
+import { Download, TriangleAlert, FileText } from "lucide-react";
 import { obterMeuContrato, relatarProblema, type RelatarProblemaInput } from "@/api/me";
 import { CATEGORIA_MANUTENCAO } from "@/types/domain";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -43,8 +45,23 @@ export function MeuContratoPage() {
     onError: (err) => setErro(mensagemErro(err)),
   });
 
-  if (isLoading) return <p className="text-muted-foreground">Carregando...</p>;
-  if (!contrato) return <p className="text-muted-foreground">Nenhum contrato ativo encontrado.</p>;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader titulo="Meu Contrato" descricao="Dados do contrato vigente." />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+  if (!contrato) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader titulo="Meu Contrato" descricao="Dados do contrato vigente." />
+        <EmptyState icon={FileText} titulo="Nenhum contrato ativo encontrado" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

@@ -62,6 +62,30 @@ export const desativar = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+export const reativar = asyncHandler(async (req, res) => {
+  await service.reativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "REATIVAR_ADMINISTRADOR",
+    entidade: "Usuario",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const excluir = asyncHandler(async (req, res) => {
+  await service.excluir(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DELETE_ADMINISTRADOR",
+    entidade: "Usuario",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
 export const resetarSenha = asyncHandler(async (req, res) => {
   const credenciaisTemporarias = await service.resetarSenha(paramId(req));
   await registrarAuditoria({

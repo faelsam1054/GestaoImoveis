@@ -1,17 +1,22 @@
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, FileText } from "lucide-react";
 import {
   listarContratos,
   criarContrato,
   encerrarContrato,
   rescindirContrato,
   renovarContrato,
+  desativarContrato,
+  reativarContrato,
+  excluirContrato,
+  enviarContratoAssinado,
   type ContratoInput,
   type RenovarContratoInput,
 } from "@/api/contratos";
+import { criarAditivo } from "@/api/aditivos";
 import { listarImoveis } from "@/api/imoveis";
 import { listarInquilinos } from "@/api/inquilinos";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,10 +27,15 @@ import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DoubleConfirmDialog } from "@/components/double-confirm-dialog";
 import { CurrencyInput } from "@/components/currency-input";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -113,15 +123,30 @@ function PreviewParcelasCaucao({
   );
 }
 
+// Um contrato tem 3 eixos independentes (status de ciclo de vida, aprovacao
+// e visibilidade); a coluna "Status" da listagem precisa combinar os 3 numa
+// unica badge, com a visibilidade (inativo) tendo prioridade sobre o resto.
+function statusExibicaoContrato(contrato: Contrato): string {
+  if (!contrato.ativo) return "inativo";
+  if (contrato.statusAprovacao === "pendente_aprovacao") return "pendente_aprovacao";
+  if (contrato.statusAprovacao === "rejeitado") return "rejeitado";
+  return contrato.status;
+}
+
 export function ContratosPage() {
   const { usuario } = useAuth();
   const podeEditar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeEditarContratos;
   const queryClient = useQueryClient();
 
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [ativoFiltro, setAtivoFiltro] = useState<"ativos" | "todos" | "inativos">("ativos");
+  const [excluindo, setExcluindo] = useState<Contrato | null>(null);
   const [dialogAberto, setDialogAberto] = useState(false);
   const [form, setForm] = useState<ContratoInput>(FORM_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
+  const [arquivoContrato, setArquivoContrato] = useState<File | null>(null);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const inputArquivoContratoRef = useRef<HTMLInputElement>(null);
 
   const [contratoRenovando, setContratoRenovando] = useState<Contrato | null>(null);
   const [formRenovacao, setFormRenovacao] = useState<RenovarContratoInput>({
@@ -132,12 +157,24 @@ export function ContratosPage() {
     valorCaucao: undefined,
     caucaoNumeroParcelas: 1,
   });
+  const [possuiAditivo, setPossuiAditivo] = useState(false);
+  const [formAditivoRenovacao, setFormAditivoRenovacao] = useState({
+    descricaoAlteracoes: "",
+    valorAnterior: undefined as number | undefined,
+    valorNovo: undefined as number | undefined,
+  });
+  const [arquivoAditivoRenovacao, setArquivoAditivoRenovacao] = useState<File | null>(null);
+  const inputAditivoRenovacaoRef = useRef<HTMLInputElement>(null);
 
   const [confirmacao, setConfirmacao] = useState<{ contrato: Contrato; acao: "encerrar" | "rescindir" } | null>(null);
 
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["contratos", statusFiltro],
-    queryFn: () => listarContratos({ status: statusFiltro === "todos" ? undefined : (statusFiltro as Contrato["status"]) }),
+    queryKey: ["contratos", statusFiltro, ativoFiltro],
+    queryFn: () =>
+      listarContratos({
+        status: statusFiltro === "todos" ? undefined : (statusFiltro as Contrato["status"]),
+        ativoFiltro,
+      }),
   });
 
   const { data: imoveisVagos } = useQuery({
@@ -158,11 +195,25 @@ export function ContratosPage() {
 
   const mutCriar = useMutation({
     mutationFn: (input: ContratoInput) => criarContrato(input),
-    onSuccess: async () => {
-      toast.success("Contrato criado. Pagamentos gerados automaticamente.");
+    onSuccess: async (contrato) => {
+      if (contrato.statusAprovacao === "pendente_aprovacao") {
+        toast.success("Contrato enviado para aprovação do Proprietário.");
+      } else {
+        toast.success("Contrato criado. Pagamentos gerados automaticamente.");
+      }
+      if (arquivoContrato) {
+        try {
+          await enviarContratoAssinado(contrato.id, arquivoContrato);
+          toast.success("PDF do contrato assinado anexado.");
+        } catch (err) {
+          toast.error(`O contrato foi criado, mas houve um erro ao anexar o PDF: ${mensagemErro(err)}`);
+        }
+      }
       await invalidar();
       await queryClient.invalidateQueries({ queryKey: ["imoveis"] });
+      await queryClient.invalidateQueries({ queryKey: ["contratos", "pendentes-aprovacao"] });
       setDialogAberto(false);
+      setArquivoContrato(null);
     },
     onError: (err) => setErro(mensagemErro(err)),
   });
@@ -191,18 +242,85 @@ export function ContratosPage() {
 
   const mutRenovar = useMutation({
     mutationFn: ({ id, input }: { id: string; input: RenovarContratoInput }) => renovarContrato(id, input),
-    onSuccess: async () => {
+    onSuccess: async (novoContrato, variables) => {
       toast.success("Contrato renovado.");
+      if (possuiAditivo && arquivoAditivoRenovacao) {
+        try {
+          await criarAditivo(novoContrato.id, {
+            descricaoAlteracoes: formAditivoRenovacao.descricaoAlteracoes,
+            valorAnterior: formAditivoRenovacao.valorAnterior,
+            valorNovo: formAditivoRenovacao.valorNovo,
+            contratoAnteriorId: variables.id,
+            arquivo: arquivoAditivoRenovacao,
+          });
+          toast.success("Aditivo de renovação anexado.");
+        } catch (err) {
+          toast.error(`O contrato foi renovado, mas houve um erro ao anexar o aditivo: ${mensagemErro(err)}`);
+        }
+      }
       await invalidar();
       setContratoRenovando(null);
     },
     onError: (err) => setErro(mensagemErro(err)),
   });
 
+  const mutDesativar = useMutation({
+    mutationFn: (id: string) => desativarContrato(id),
+    onSuccess: async () => {
+      toast.success("Contrato desativado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutReativar = useMutation({
+    mutationFn: (id: string) => reativarContrato(id),
+    onSuccess: async () => {
+      toast.success("Contrato reativado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutExcluir = useMutation({
+    mutationFn: (id: string) => excluirContrato(id),
+    onSuccess: async () => {
+      toast.success("Contrato excluído definitivamente.");
+      await invalidar();
+      setExcluindo(null);
+    },
+    onError: (err) => {
+      toast.error(mensagemErro(err));
+      setExcluindo(null);
+    },
+  });
+
   function abrirNovo() {
     setForm(FORM_VAZIO);
     setErro(null);
+    setArquivoContrato(null);
+    setErroArquivo(null);
     setDialogAberto(true);
+  }
+
+  function selecionarArquivoContrato(e: ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0] ?? null;
+    if (arquivo) {
+      if (arquivo.type !== "application/pdf") {
+        setErroArquivo("Envie um arquivo PDF.");
+        setArquivoContrato(null);
+        e.target.value = "";
+        return;
+      }
+      if (arquivo.size > 10 * 1024 * 1024) {
+        setErroArquivo("O arquivo deve ter no máximo 10MB.");
+        setArquivoContrato(null);
+        e.target.value = "";
+        return;
+      }
+    }
+    setErroArquivo(null);
+    setArquivoContrato(arquivo);
   }
 
   function abrirRenovacao(contrato: Contrato) {
@@ -215,6 +333,13 @@ export function ContratosPage() {
       valorCaucao: contrato.valorCaucao ?? undefined,
       caucaoNumeroParcelas: (contrato.caucaoNumeroParcelas ?? 1) as 1 | 2 | 3,
     });
+    setPossuiAditivo(false);
+    setFormAditivoRenovacao({
+      descricaoAlteracoes: "",
+      valorAnterior: contrato.valorAluguel,
+      valorNovo: contrato.valorAluguel,
+    });
+    setArquivoAditivoRenovacao(null);
     setErro(null);
   }
 
@@ -236,63 +361,161 @@ export function ContratosPage() {
         }
       />
 
-      <div className="mb-4 max-w-xs">
-        <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-          <SelectTrigger>
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os status</SelectItem>
-            {STATUS_CONTRATO.map((s) => (
-              <SelectItem key={s} value={s} className="capitalize">
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-wrap gap-3">
+        <div className="w-full max-w-xs">
+          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os status</SelectItem>
+              {STATUS_CONTRATO.map((s) => (
+                <SelectItem key={s} value={s} className="capitalize">
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full max-w-xs">
+          <Select value={ativoFiltro} onValueChange={(v) => setAtivoFiltro(v as typeof ativoFiltro)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ativos">Mostrar apenas ativos</SelectItem>
+              <SelectItem value="todos">Mostrar todos</SelectItem>
+              <SelectItem value="inativos">Mostrar apenas inativos</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Imóvel</TableHead>
-              <TableHead>Inquilino</TableHead>
-              <TableHead>Período</TableHead>
-              <TableHead>Valor</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && contratos.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Nenhum contrato encontrado.
-                </TableCell>
-              </TableRow>
-            )}
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && contratos.length === 0 && (
+        <EmptyState
+          icon={FileText}
+          titulo="Nenhum contrato encontrado"
+          descricao="Ajuste os filtros ou crie um novo contrato para começar."
+        />
+      )}
+
+      {!isLoading && contratos.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Imóvel</TableHead>
+                  <TableHead>Inquilino</TableHead>
+                  <TableHead>Período</TableHead>
+                  <TableHead>Valor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contratos.map((contrato) => (
+                  <TableRow key={contrato.id}>
+                    <TableCell>
+                      {contrato.imovel?.logradouro}, {contrato.imovel?.numero}
+                    </TableCell>
+                    <TableCell>{contrato.inquilino?.usuario?.nome}</TableCell>
+                    <TableCell>
+                      {formatarData(contrato.dataInicio)} - {formatarData(contrato.dataFim)}
+                    </TableCell>
+                    <TableCell>{formatarMoeda(contrato.valorAluguel)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={statusExibicaoContrato(contrato)} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/contratos/${contrato.id}`}>Detalhes</Link>
+                      </Button>
+                      {podeEditar && contrato.status === "ativo" && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
+                            Renovar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setConfirmacao({ contrato, acao: "encerrar" })}
+                          >
+                            Encerrar
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => setConfirmacao({ contrato, acao: "rescindir" })}
+                          >
+                            Rescindir
+                          </Button>
+                        </>
+                      )}
+                      {podeEditar && (
+                        <>
+                          {contrato.ativo ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-amber-600 dark:text-amber-400"
+                              onClick={() => mutDesativar.mutate(contrato.id)}
+                            >
+                              Desativar
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-success"
+                              onClick={() => mutReativar.mutate(contrato.id)}
+                            >
+                              Ativar
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => setExcluindo(contrato)}
+                          >
+                            Excluir
+                          </Button>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
             {contratos.map((contrato) => (
-              <TableRow key={contrato.id}>
-                <TableCell>
-                  {contrato.imovel?.logradouro}, {contrato.imovel?.numero}
-                </TableCell>
-                <TableCell>{contrato.inquilino?.usuario?.nome}</TableCell>
-                <TableCell>
-                  {formatarData(contrato.dataInicio)} - {formatarData(contrato.dataFim)}
-                </TableCell>
-                <TableCell>{formatarMoeda(contrato.valorAluguel)}</TableCell>
-                <TableCell>
-                  <StatusBadge status={contrato.status} />
-                </TableCell>
-                <TableCell className="text-right">
+              <MobileRowCard key={contrato.id}>
+                <MobileRowCardHeader>
+                  <div className="min-w-0">
+                    <p className="font-medium">
+                      {contrato.imovel?.logradouro}, {contrato.imovel?.numero}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">{contrato.inquilino?.usuario?.nome}</p>
+                  </div>
+                  <StatusBadge status={statusExibicaoContrato(contrato)} />
+                </MobileRowCardHeader>
+                <MobileRowField
+                  label="Período"
+                  value={`${formatarData(contrato.dataInicio)} - ${formatarData(contrato.dataFim)}`}
+                />
+                <MobileRowField label="Valor" value={formatarMoeda(contrato.valorAluguel)} />
+                <MobileRowActions>
                   <Button variant="ghost" size="sm" asChild>
                     <Link to={`/contratos/${contrato.id}`}>Detalhes</Link>
                   </Button>
@@ -318,12 +541,43 @@ export function ContratosPage() {
                       </Button>
                     </>
                   )}
-                </TableCell>
-              </TableRow>
+                  {podeEditar && (
+                    <>
+                      {contrato.ativo ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-amber-600 dark:text-amber-400"
+                          onClick={() => mutDesativar.mutate(contrato.id)}
+                        >
+                          Desativar
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-success"
+                          onClick={() => mutReativar.mutate(contrato.id)}
+                        >
+                          Ativar
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => setExcluindo(contrato)}
+                      >
+                        Excluir
+                      </Button>
+                    </>
+                  )}
+                </MobileRowActions>
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Novo contrato */}
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
@@ -335,6 +589,11 @@ export function ContratosPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            {usuario?.role === "administrador" && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                Este contrato precisará de aprovação do Proprietário antes de ser ativado.
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Label>Imóvel (somente vagos)</Label>
               <Select value={form.imovelId} onValueChange={(v) => setForm({ ...form, imovelId: v })}>
@@ -430,6 +689,26 @@ export function ContratosPage() {
                 />
               </div>
             )}
+            <div className="flex flex-col gap-2">
+              <Label>Anexar PDF do Contrato</Label>
+              <input
+                ref={inputArquivoContratoRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={selecionarArquivoContrato}
+              />
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => inputArquivoContratoRef.current?.click()}>
+                  {arquivoContrato ? "Trocar arquivo" : "Selecionar PDF"}
+                </Button>
+                {arquivoContrato && <span className="truncate text-sm text-muted-foreground">{arquivoContrato.name}</span>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Opcional — você poderá adicionar depois, na tela de detalhes do contrato. Máx. 10MB.
+              </p>
+              {erroArquivo && <p className="text-xs text-destructive">{erroArquivo}</p>}
+            </div>
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>
           <DialogFooter>
@@ -518,6 +797,71 @@ export function ContratosPage() {
                 />
               </div>
             )}
+
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={possuiAditivo} onCheckedChange={(v) => setPossuiAditivo(v === true)} />
+              Esta renovação possui aditivo contratual
+            </label>
+
+            {possuiAditivo && (
+              <div className="flex flex-col gap-3 rounded-lg border p-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="descricaoAditivoRenovacao">
+                    Descrição das alterações <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    id="descricaoAditivoRenovacao"
+                    rows={2}
+                    value={formAditivoRenovacao.descricaoAlteracoes}
+                    onChange={(e) =>
+                      setFormAditivoRenovacao({ ...formAditivoRenovacao, descricaoAlteracoes: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-2">
+                    <Label>Valor anterior</Label>
+                    <CurrencyInput
+                      value={formAditivoRenovacao.valorAnterior}
+                      onValueChange={(v) => setFormAditivoRenovacao({ ...formAditivoRenovacao, valorAnterior: v })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label>Valor novo</Label>
+                    <CurrencyInput
+                      value={formAditivoRenovacao.valorNovo}
+                      onValueChange={(v) => setFormAditivoRenovacao({ ...formAditivoRenovacao, valorNovo: v })}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>
+                    PDF do aditivo <span className="text-destructive">*</span>
+                  </Label>
+                  <input
+                    ref={inputAditivoRenovacaoRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => setArquivoAditivoRenovacao(e.target.files?.[0] ?? null)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => inputAditivoRenovacaoRef.current?.click()}
+                    >
+                      {arquivoAditivoRenovacao ? "Trocar arquivo" : "Selecionar PDF"}
+                    </Button>
+                    {arquivoAditivoRenovacao && (
+                      <span className="truncate text-sm text-muted-foreground">{arquivoAditivoRenovacao.name}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>
           <DialogFooter>
@@ -529,7 +873,12 @@ export function ContratosPage() {
                 setErro(null);
                 if (contratoRenovando) mutRenovar.mutate({ id: contratoRenovando.id, input: formRenovacao });
               }}
-              disabled={mutRenovar.isPending || !formRenovacao.dataInicio || !formRenovacao.dataFim}
+              disabled={
+                mutRenovar.isPending ||
+                !formRenovacao.dataInicio ||
+                !formRenovacao.dataFim ||
+                (possuiAditivo && (!formAditivoRenovacao.descricaoAlteracoes || !arquivoAditivoRenovacao))
+              }
             >
               {mutRenovar.isPending ? "Renovando..." : "Renovar"}
             </Button>
@@ -553,6 +902,18 @@ export function ContratosPage() {
           if (confirmacao.acao === "encerrar") mutEncerrar.mutate(confirmacao.contrato.id);
           else mutRescindir.mutate(confirmacao.contrato.id);
         }}
+      />
+
+      <DoubleConfirmDialog
+        open={Boolean(excluindo)}
+        onOpenChange={(open) => !open && setExcluindo(null)}
+        titulo="Excluir contrato definitivamente"
+        descricao="Esta ação remove o contrato permanentemente. Só é possível se ele não tiver nenhum pagamento ou parcela de caução vinculado (na prática, apenas contratos pendentes de aprovação ou rejeitados)."
+        confirmLabel={`Digite o ID do contrato (${excluindo?.id ?? ""}) para confirmar`}
+        confirmValue={excluindo?.id ?? ""}
+        textoConfirmar="Excluir definitivamente"
+        pending={mutExcluir.isPending}
+        onConfirm={() => excluindo && mutExcluir.mutate(excluindo.id)}
       />
     </div>
   );

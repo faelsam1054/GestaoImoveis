@@ -7,6 +7,8 @@ import {
   listarAdministradores,
   criarAdministrador,
   desativarAdministrador,
+  reativarAdministrador,
+  excluirAdministrador,
   resetarSenhaAdministrador,
   atualizarPermissoesAdministrador,
   listarImoveisVinculados,
@@ -21,11 +23,15 @@ import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DoubleConfirmDialog } from "@/components/double-confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -63,6 +69,8 @@ export function AdministradoresPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [credenciais, setCredenciais] = useState<CredenciaisTemporarias | null>(null);
   const [desativando, setDesativando] = useState<Administrador | null>(null);
+  const [excluindo, setExcluindo] = useState<Administrador | null>(null);
+  const [filtroStatus, setFiltroStatus] = useState<"ativos" | "todos" | "inativos">("ativos");
   const [resetando, setResetando] = useState<Administrador | null>(null);
   const [editandoPermissoes, setEditandoPermissoes] = useState<Administrador | null>(null);
   const [permissoesForm, setPermissoesForm] = useState<PermissaoAdministrador | null>(null);
@@ -116,6 +124,28 @@ export function AdministradoresPage() {
       setDesativando(null);
     },
     onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutReativar = useMutation({
+    mutationFn: (id: string) => reativarAdministrador(id),
+    onSuccess: async () => {
+      toast.success("Administrador reativado.");
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
+
+  const mutExcluir = useMutation({
+    mutationFn: (id: string) => excluirAdministrador(id),
+    onSuccess: async () => {
+      toast.success("Administrador excluído definitivamente.");
+      await invalidar();
+      setExcluindo(null);
+    },
+    onError: (err) => {
+      toast.error(mensagemErro(err));
+      setExcluindo(null);
+    },
   });
 
   const mutResetarSenha = useMutation({
@@ -203,6 +233,12 @@ export function AdministradoresPage() {
       );
     }) ?? [];
 
+  const administradoresFiltrados = (administradores ?? []).filter((administrador) => {
+    if (filtroStatus === "ativos") return administrador.ativo;
+    if (filtroStatus === "inativos") return !administrador.ativo;
+    return true;
+  });
+
   return (
     <div>
       <PageHeader
@@ -218,73 +254,183 @@ export function AdministradoresPage() {
         }
       />
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Imóveis</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && administradores?.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Nenhum administrador cadastrado.
-                </TableCell>
-              </TableRow>
-            )}
-            {administradores?.map((administrador) => (
-              <TableRow key={administrador.id}>
-                <TableCell className="font-medium">{administrador.nome}</TableCell>
-                <TableCell className="text-muted-foreground">{administrador.email}</TableCell>
-                <TableCell>
+      <div className="mb-4 max-w-xs">
+        <Select value={filtroStatus} onValueChange={(v) => setFiltroStatus(v as typeof filtroStatus)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ativos">Mostrar apenas ativos</SelectItem>
+            <SelectItem value="todos">Mostrar todos</SelectItem>
+            <SelectItem value="inativos">Mostrar apenas inativos</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && administradoresFiltrados.length === 0 && (
+        <EmptyState
+          icon={ShieldCheck}
+          titulo="Nenhum administrador encontrado"
+          descricao="Ajuste o filtro de status ou cadastre um administrador para ajudar na gestão do dia a dia."
+        />
+      )}
+
+      {!isLoading && administradoresFiltrados.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Imóveis</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {administradoresFiltrados.map((administrador) => (
+                  <TableRow key={administrador.id}>
+                    <TableCell className="font-medium">{administrador.nome}</TableCell>
+                    <TableCell className="text-muted-foreground">{administrador.email}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={administrador.ativo ? "ativo" : "inativo"} />
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {administrador.totalImoveisVinculados ?? 0}{" "}
+                        {administrador.totalImoveisVinculados === 1 ? "imóvel" : "imóveis"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {ehProprietario && (
+                        <>
+                          <Button variant="ghost" size="sm" onClick={() => abrirVinculoImoveis(administrador)}>
+                            <Building2 className="h-4 w-4" />
+                            Imóveis
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => abrirPermissoes(administrador)}>
+                            <ShieldCheck className="h-4 w-4" />
+                            Permissões
+                          </Button>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setResetando(administrador)}>
+                            Resetar senha
+                          </Button>
+                          {administrador.ativo ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-amber-600 dark:text-amber-400"
+                              onClick={() => setDesativando(administrador)}
+                            >
+                              Desativar
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-success"
+                              onClick={() => mutReativar.mutate(administrador.id)}
+                            >
+                              Ativar
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => setExcluindo(administrador)}
+                          >
+                            Excluir
+                          </Button>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
+            {administradoresFiltrados.map((administrador) => (
+              <MobileRowCard key={administrador.id}>
+                <MobileRowCardHeader>
+                  <div className="min-w-0">
+                    <p className="font-medium">{administrador.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">{administrador.email}</p>
+                  </div>
                   <StatusBadge status={administrador.ativo ? "ativo" : "inativo"} />
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">
-                    {administrador.totalImoveisVinculados ?? 0}{" "}
-                    {administrador.totalImoveisVinculados === 1 ? "imóvel" : "imóveis"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {ehProprietario && (
-                    <>
-                      <Button variant="ghost" size="sm" onClick={() => abrirVinculoImoveis(administrador)}>
-                        <Building2 className="h-4 w-4" />
-                        Imóveis
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => abrirPermissoes(administrador)}>
-                        <ShieldCheck className="h-4 w-4" />
-                        Permissões
-                      </Button>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setResetando(administrador)}>
-                        Resetar senha
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setDesativando(administrador)}>
+                </MobileRowCardHeader>
+                <MobileRowField
+                  label="Imóveis"
+                  value={
+                    <Badge variant="secondary">
+                      {administrador.totalImoveisVinculados ?? 0}{" "}
+                      {administrador.totalImoveisVinculados === 1 ? "imóvel" : "imóveis"}
+                    </Badge>
+                  }
+                />
+                {ehProprietario && (
+                  <MobileRowActions>
+                    <Button variant="ghost" size="sm" onClick={() => abrirVinculoImoveis(administrador)}>
+                      <Building2 className="h-4 w-4" />
+                      Imóveis
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => abrirPermissoes(administrador)}>
+                      <ShieldCheck className="h-4 w-4" />
+                      Permissões
+                    </Button>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setResetando(administrador)}>
+                      Resetar senha
+                    </Button>
+                    {administrador.ativo ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-amber-600 dark:text-amber-400"
+                        onClick={() => setDesativando(administrador)}
+                      >
                         Desativar
                       </Button>
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-success"
+                        onClick={() => mutReativar.mutate(administrador.id)}
+                      >
+                        Ativar
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={() => setExcluindo(administrador)}
+                    >
+                      Excluir
+                    </Button>
+                  </MobileRowActions>
+                )}
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Novo administrador */}
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
@@ -411,6 +557,18 @@ export function AdministradoresPage() {
         textoConfirmar="Resetar"
         destrutivo
         onConfirm={() => resetando && mutResetarSenha.mutate(resetando.id)}
+      />
+
+      <DoubleConfirmDialog
+        open={Boolean(excluindo)}
+        onOpenChange={(open) => !open && setExcluindo(null)}
+        titulo="Excluir administrador definitivamente"
+        descricao={`Esta ação remove ${excluindo?.nome ?? ""} permanentemente do sistema. Só é possível se ele não tiver nenhuma ação registrada (contratos, recibos, mensalidades, auditoria).`}
+        confirmLabel={`Digite o email (${excluindo?.email ?? ""}) para confirmar`}
+        confirmValue={excluindo?.email ?? ""}
+        textoConfirmar="Excluir definitivamente"
+        pending={mutExcluir.isPending}
+        onConfirm={() => excluindo && mutExcluir.mutate(excluindo.id)}
       />
 
       {/* Imoveis vinculados */}

@@ -48,13 +48,21 @@ export function RedefinirSenhaPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-32 -bottom-40 h-96 w-96 rounded-full bg-success/15 blur-3xl"
+      />
+      <Card className="relative w-full max-w-sm shadow-lg">
+        <CardHeader className="flex flex-col items-center gap-2 text-center">
+          <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <KeyRound className="h-5 w-5" />
           </div>
-          <CardTitle>Redefinir senha</CardTitle>
+          <CardTitle className="text-xl">Redefinir senha</CardTitle>
           <CardDescription>Defina uma nova senha de acesso.</CardDescription>
         </CardHeader>
         <CardContent>

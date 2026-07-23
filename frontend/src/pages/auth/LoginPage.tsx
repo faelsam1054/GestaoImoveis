@@ -43,13 +43,22 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-32 -bottom-40 h-96 w-96 rounded-full bg-success/15 blur-3xl"
+      />
+
+      <Card className="relative w-full max-w-sm shadow-lg">
+        <CardHeader className="flex flex-col items-center gap-2 text-center">
+          <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <Home className="h-5 w-5" />
           </div>
-          <CardTitle>Gestão de Aluguéis</CardTitle>
+          <CardTitle className="text-xl">Gestão de Aluguéis</CardTitle>
           <CardDescription>Entre com seu email e senha</CardDescription>
         </CardHeader>
         <CardContent>
@@ -61,6 +70,7 @@ export function LoginPage() {
                 type="email"
                 autoComplete="username"
                 required
+                className="h-11"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -76,12 +86,15 @@ export function LoginPage() {
                 id="senha"
                 autoComplete="current-password"
                 required
+                className="h-11"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
               />
             </div>
-            {erro && <p className="text-sm text-destructive">{erro}</p>}
-            <Button type="submit" className="w-full" disabled={enviando}>
+            {erro && (
+              <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{erro}</p>
+            )}
+            <Button type="submit" size="lg" className="mt-1 w-full" disabled={enviando}>
               {enviando ? "Entrando..." : "Entrar"}
             </Button>
           </form>

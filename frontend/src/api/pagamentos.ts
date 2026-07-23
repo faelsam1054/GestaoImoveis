@@ -50,3 +50,8 @@ export async function marcarPagamentoComoPago(id: string, input: MarcarPagoInput
   const { data } = await api.patch(`/pagamentos/${id}/pagar`, input);
   return data;
 }
+
+export async function desfazerPagamento(id: string, removerRecibo: boolean): Promise<Pagamento> {
+  const { data } = await api.post(`/pagamentos/${id}/desfazer-pagamento`, { removerRecibo });
+  return data;
+}

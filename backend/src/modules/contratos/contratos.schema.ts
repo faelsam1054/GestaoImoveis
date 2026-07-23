@@ -30,10 +30,15 @@ export const renovarContratoSchema = z
     path: ["dataFim"],
   });
 
+export const rejeitarContratoSchema = z.object({
+  motivoRejeicao: z.string().min(3, "Informe o motivo da rejeição"),
+});
+
 export const listarContratosQuerySchema = z.object({
   status: z.enum(["ativo", "encerrado", "rescindido", "renovado"]).optional(),
   imovelId: z.string().optional(),
   inquilinoId: z.string().optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
+  ativoFiltro: z.enum(["ativos", "todos", "inativos"]).optional(),
 });

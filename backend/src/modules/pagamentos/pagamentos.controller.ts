@@ -7,6 +7,7 @@ import {
   atualizarPagamentoSchema,
   marcarPagoSchema,
   listarPagamentosQuerySchema,
+  desfazerPagamentoSchema,
 } from "./pagamentos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 import {
@@ -80,6 +81,23 @@ export const marcarComoPago = asyncHandler(async (req, res) => {
     acao: "REGISTRAR_PAGAMENTO",
     entidade: "Pagamento",
     entidadeId: pagamento.id,
+    dadosDepois: pagamento,
+    ip: getClientIp(req),
+  });
+  res.json(pagamento);
+});
+
+export const desfazerPagamento = asyncHandler(async (req, res) => {
+  await garantirAcessoPagamento(req, paramId(req));
+  const data = desfazerPagamentoSchema.parse(req.body);
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  const pagamento = await service.desfazerPagamento(paramId(req), data);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DESFAZER_PAGAMENTO",
+    entidade: "Pagamento",
+    entidadeId: pagamento.id,
+    dadosAntes: antes,
     dadosDepois: pagamento,
     ip: getClientIp(req),
   });

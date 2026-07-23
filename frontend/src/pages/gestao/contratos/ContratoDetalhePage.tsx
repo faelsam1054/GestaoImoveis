@@ -2,21 +2,26 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, FileUp, Trash2 } from "lucide-react";
+import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack } from "lucide-react";
 import { detalharContrato, enviarContratoAssinado, removerContratoAssinado } from "@/api/contratos";
 import { listarParcelasCaucao, pagarParcelaCaucao, type PagarParcelaCaucaoInput } from "@/api/caucao";
+import { listarAditivos, criarAditivo, excluirAditivo, baixarAditivo } from "@/api/aditivos";
 import { useAuth } from "@/contexts/AuthContext";
-import { FORMA_PAGAMENTO_CAUCAO, type CaucaoParcela } from "@/types/domain";
+import { FORMA_PAGAMENTO_CAUCAO, type CaucaoParcela, type AditivoContrato } from "@/types/domain";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { CurrencyInput } from "@/components/currency-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +45,17 @@ export function ContratoDetalhePage() {
   });
   const [erro, setErro] = useState<string | null>(null);
   const [removendoContrato, setRemovendoContrato] = useState(false);
+
+  const inputAditivoRef = useRef<HTMLInputElement>(null);
+  const [aditivoDialogAberto, setAditivoDialogAberto] = useState(false);
+  const [formAditivo, setFormAditivo] = useState({
+    descricaoAlteracoes: "",
+    valorAnterior: undefined as number | undefined,
+    valorNovo: undefined as number | undefined,
+  });
+  const [arquivoAditivo, setArquivoAditivo] = useState<File | null>(null);
+  const [erroAditivo, setErroAditivo] = useState<string | null>(null);
+  const [excluindoAditivo, setExcluindoAditivo] = useState<AditivoContrato | null>(null);
 
   const { data: contrato, isLoading } = useQuery({
     queryKey: ["contratos", id],
@@ -92,6 +108,54 @@ export function ContratoDetalhePage() {
     },
   });
 
+  const { data: aditivos } = useQuery({
+    queryKey: ["contratos", id, "aditivos"],
+    queryFn: () => listarAditivos(id!),
+    enabled: Boolean(id),
+  });
+
+  function invalidarAditivos() {
+    return queryClient.invalidateQueries({ queryKey: ["contratos", id, "aditivos"] });
+  }
+
+  const mutCriarAditivo = useMutation({
+    mutationFn: () => criarAditivo(id!, { ...formAditivo, arquivo: arquivoAditivo! }),
+    onSuccess: async () => {
+      toast.success("Aditivo anexado.");
+      await invalidarAditivos();
+      setAditivoDialogAberto(false);
+    },
+    onError: (err) => setErroAditivo(mensagemErro(err)),
+  });
+
+  const mutExcluirAditivo = useMutation({
+    mutationFn: (aditivoId: string) => excluirAditivo(aditivoId),
+    onSuccess: async () => {
+      toast.success("Aditivo excluído.");
+      await invalidarAditivos();
+      setExcluindoAditivo(null);
+    },
+    onError: (err) => {
+      toast.error(mensagemErro(err));
+      setExcluindoAditivo(null);
+    },
+  });
+
+  async function baixar(aditivo: AditivoContrato) {
+    try {
+      await baixarAditivo(aditivo.id, `aditivo-${formatarData(aditivo.dataAditivo)}.pdf`);
+    } catch (err) {
+      toast.error(mensagemErro(err));
+    }
+  }
+
+  function abrirNovoAditivo() {
+    setFormAditivo({ descricaoAlteracoes: "", valorAnterior: undefined, valorNovo: undefined });
+    setArquivoAditivo(null);
+    setErroAditivo(null);
+    setAditivoDialogAberto(true);
+  }
+
   if (isLoading) return <p className="text-muted-foreground">Carregando...</p>;
   if (!contrato) return <p className="text-muted-foreground">Contrato não encontrado.</p>;
 
@@ -123,6 +187,13 @@ export function ContratoDetalhePage() {
         </p>
       </div>
 
+      <Tabs defaultValue="detalhes">
+        <TabsList>
+          <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
+          <TabsTrigger value="aditivos">Aditivos{aditivos && aditivos.length > 0 ? ` (${aditivos.length})` : ""}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="detalhes" className="flex flex-col gap-6">
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
@@ -303,6 +374,74 @@ export function ContratoDetalhePage() {
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="aditivos" className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            {podeEditar && contrato.status === "ativo" && (
+              <Button size="sm" onClick={abrirNovoAditivo}>
+                <Paperclip className="h-4 w-4" />
+                Adicionar Aditivo
+              </Button>
+            )}
+          </div>
+
+          {(!aditivos || aditivos.length === 0) && (
+            <EmptyState
+              icon={FileStack}
+              titulo="Nenhum aditivo cadastrado"
+              descricao="Aditivos registram mudanças contratuais (ex: renovação com novo valor de aluguel)."
+            />
+          )}
+
+          {aditivos && aditivos.length > 0 && (
+            <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Valor anterior → novo</TableHead>
+                    <TableHead>Criado por</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {aditivos.map((aditivo) => (
+                    <TableRow key={aditivo.id}>
+                      <TableCell>{formatarData(aditivo.dataAditivo)}</TableCell>
+                      <TableCell className="max-w-xs truncate">{aditivo.descricaoAlteracoes}</TableCell>
+                      <TableCell>
+                        {aditivo.valorAnterior !== null && aditivo.valorNovo !== null
+                          ? `${formatarMoeda(aditivo.valorAnterior)} → ${formatarMoeda(aditivo.valorNovo)}`
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{aditivo.criadoPor?.nome ?? "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => baixar(aditivo)}>
+                          <Download className="h-4 w-4" />
+                          Baixar
+                        </Button>
+                        {podeEditar && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive"
+                            onClick={() => setExcluindoAditivo(aditivo)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Excluir
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Registrar pagamento de parcela de caucao */}
       <Dialog open={Boolean(pagando)} onOpenChange={(open) => !open && setPagando(null)}>
@@ -379,6 +518,92 @@ export function ContratoDetalhePage() {
         textoConfirmar="Remover"
         destrutivo
         onConfirm={() => mutRemoverContrato.mutate()}
+      />
+
+      {/* Adicionar aditivo */}
+      <Dialog open={aditivoDialogAberto} onOpenChange={setAditivoDialogAberto}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Adicionar Aditivo</DialogTitle>
+            <DialogDescription>
+              Anexe um PDF registrando uma alteração contratual (ex: novo valor de aluguel).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="descricaoAlteracoes">
+                Descrição das alterações <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="descricaoAlteracoes"
+                rows={3}
+                value={formAditivo.descricaoAlteracoes}
+                onChange={(e) => setFormAditivo({ ...formAditivo, descricaoAlteracoes: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label>Valor anterior (opcional)</Label>
+                <CurrencyInput
+                  value={formAditivo.valorAnterior}
+                  onValueChange={(v) => setFormAditivo({ ...formAditivo, valorAnterior: v })}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Valor novo (opcional)</Label>
+                <CurrencyInput
+                  value={formAditivo.valorNovo}
+                  onValueChange={(v) => setFormAditivo({ ...formAditivo, valorNovo: v })}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>
+                PDF do aditivo <span className="text-destructive">*</span>
+              </Label>
+              <input
+                ref={inputAditivoRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={(e) => setArquivoAditivo(e.target.files?.[0] ?? null)}
+              />
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => inputAditivoRef.current?.click()}>
+                  {arquivoAditivo ? "Trocar arquivo" : "Selecionar PDF"}
+                </Button>
+                {arquivoAditivo && (
+                  <span className="truncate text-sm text-muted-foreground">{arquivoAditivo.name}</span>
+                )}
+              </div>
+            </div>
+            {erroAditivo && <p className="text-sm text-destructive">{erroAditivo}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAditivoDialogAberto(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setErroAditivo(null);
+                mutCriarAditivo.mutate();
+              }}
+              disabled={mutCriarAditivo.isPending || !formAditivo.descricaoAlteracoes || !arquivoAditivo}
+            >
+              {mutCriarAditivo.isPending ? "Enviando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={Boolean(excluindoAditivo)}
+        onOpenChange={(open) => !open && setExcluindoAditivo(null)}
+        titulo="Excluir aditivo"
+        descricao="O PDF anexado será removido definitivamente. Esta ação não pode ser desfeita."
+        textoConfirmar="Excluir"
+        destrutivo
+        onConfirm={() => excluindoAditivo && mutExcluirAditivo.mutate(excluindoAditivo.id)}
       />
     </div>
   );

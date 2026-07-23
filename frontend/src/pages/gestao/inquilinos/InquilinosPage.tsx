@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, KeyRound } from "lucide-react";
+import { Plus, Search, KeyRound, Users } from "lucide-react";
 import {
   listarInquilinos,
   criarInquilino,
@@ -20,6 +20,8 @@ import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -209,45 +211,110 @@ export function InquilinosPage() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>CPF</TableHead>
-              <TableHead>Telefone</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && inquilinos.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  Nenhum inquilino encontrado.
-                </TableCell>
-              </TableRow>
-            )}
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && inquilinos.length === 0 && (
+        <EmptyState
+          icon={Users}
+          titulo="Nenhum inquilino encontrado"
+          descricao="Ajuste a busca ou cadastre um novo inquilino para começar."
+        />
+      )}
+
+      {!isLoading && inquilinos.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>CPF</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inquilinos.map((inquilino) => (
+                  <TableRow key={inquilino.id}>
+                    <TableCell className="font-medium">{inquilino.usuario?.nome}</TableCell>
+                    <TableCell className="text-muted-foreground">{inquilino.usuario?.email}</TableCell>
+                    <TableCell>{inquilino.cpf}</TableCell>
+                    <TableCell>{inquilino.telefone}</TableCell>
+                    <TableCell>
+                      <StatusBadge
+                        status={inquilino.excluidoEm ? "excluido" : inquilino.usuario?.ativo ? "ativo" : "inativo"}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {inquilino.excluidoEm ? (
+                        ehProprietario && (
+                          <Button variant="ghost" size="sm" onClick={() => mutRestaurar.mutate(inquilino.id)}>
+                            Restaurar
+                          </Button>
+                        )
+                      ) : (
+                        <>
+                          {podeEditar && (
+                            <Button variant="ghost" size="sm" onClick={() => abrirEdicao(inquilino)}>
+                              Editar
+                            </Button>
+                          )}
+                          {ehProprietario && (
+                            <Button variant="ghost" size="sm" onClick={() => setResetando(inquilino)}>
+                              Resetar senha
+                            </Button>
+                          )}
+                          {ehProprietario && inquilino.usuario?.ativo && (
+                            <Button variant="ghost" size="sm" onClick={() => setDesativando(inquilino)}>
+                              Desativar
+                            </Button>
+                          )}
+                          {ehProprietario && !inquilino.usuario?.ativo && (
+                            <Button variant="ghost" size="sm" onClick={() => mutAtivar.mutate(inquilino.id)}>
+                              Ativar
+                            </Button>
+                          )}
+                          {ehProprietario && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => setExcluindo(inquilino)}
+                            >
+                              Excluir
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
             {inquilinos.map((inquilino) => (
-              <TableRow key={inquilino.id}>
-                <TableCell className="font-medium">{inquilino.usuario?.nome}</TableCell>
-                <TableCell className="text-muted-foreground">{inquilino.usuario?.email}</TableCell>
-                <TableCell>{inquilino.cpf}</TableCell>
-                <TableCell>{inquilino.telefone}</TableCell>
-                <TableCell>
+              <MobileRowCard key={inquilino.id}>
+                <MobileRowCardHeader>
+                  <div className="min-w-0">
+                    <p className="font-medium">{inquilino.usuario?.nome}</p>
+                    <p className="truncate text-xs text-muted-foreground">{inquilino.usuario?.email}</p>
+                  </div>
                   <StatusBadge
                     status={inquilino.excluidoEm ? "excluido" : inquilino.usuario?.ativo ? "ativo" : "inativo"}
                   />
-                </TableCell>
-                <TableCell className="text-right">
+                </MobileRowCardHeader>
+                <MobileRowField label="CPF" value={inquilino.cpf} />
+                <MobileRowField label="Telefone" value={inquilino.telefone} />
+                <MobileRowActions>
                   {inquilino.excluidoEm ? (
                     ehProprietario && (
                       <Button variant="ghost" size="sm" onClick={() => mutRestaurar.mutate(inquilino.id)}>
@@ -288,12 +355,12 @@ export function InquilinosPage() {
                       )}
                     </>
                   )}
-                </TableCell>
-              </TableRow>
+                </MobileRowActions>
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">

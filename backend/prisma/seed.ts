@@ -44,6 +44,22 @@ async function main() {
   });
   console.log("✓ proprietario: admin@sistema.com / admin123");
 
+  // ── 2b. Segundo proprietario (Ajuste 2: multiplos proprietarios) ────────
+  await prisma.usuario.upsert({
+    where: { email: "proprietario2@sistema.com" },
+    update: {},
+    create: {
+      nome: "Rafaela Proprietária",
+      email: "proprietario2@sistema.com",
+      telefone: "11955551234",
+      senhaHash: senhaProprietarioHash,
+      role: "proprietario",
+      ativo: true,
+      precisaTrocarSenha: false,
+    },
+  });
+  console.log("✓ segundo proprietario: proprietario2@sistema.com / admin123");
+
   // ── 3. Administradores (2, com permissoes diferentes) ────────────────────
   const admin1 = await prisma.usuario.upsert({
     where: { email: "administrador1@sistema.com" },
@@ -132,7 +148,7 @@ async function main() {
 
   const inquilino1 = await criarInquilino("inquilino1@sistema.com", "João Pereira", "11122233344", "11988887777");
   const inquilino2 = await criarInquilino("inquilino2@sistema.com", "Maria Souza", "22233344455", "11977776666");
-  await criarInquilino("inquilino3@sistema.com", "Pedro Lima", "33344455566", "11966665555");
+  const inquilino3 = await criarInquilino("inquilino3@sistema.com", "Pedro Lima", "33344455566", "11966665555");
   const inquilino4 = await criarInquilino("inquilino4@sistema.com", "Ana Ribeiro", "44455566677", "11955554444");
   console.log(
     `✓ 4 inquilinos: inquilino1@sistema.com, inquilino2@sistema.com, inquilino3@sistema.com, inquilino4@sistema.com / ${SENHA_PADRAO}`,
@@ -225,8 +241,25 @@ async function main() {
       status: "inativo",
     },
   });
+  const imovel6 = await prisma.imovel.upsert({
+    where: { id: "seed-imovel-6" },
+    update: {},
+    create: {
+      id: "seed-imovel-6",
+      tipoImovelId: tipos.Apartamento,
+      logradouro: "Rua Bela Vista",
+      numero: "88",
+      bairro: "Bela Vista",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01310-100",
+      valorAluguelBase: 1600,
+      descricao: "Apartamento reformado recentemente, ainda com um contrato aguardando aprovação.",
+      status: "vago",
+    },
+  });
   console.log(
-    "✓ 5 imóveis (Rua das Flores, Avenida Central, Rua dos Estudantes, Rua do Comércio, Rua do Sítio [inativo])",
+    "✓ 6 imóveis (Rua das Flores, Avenida Central, Rua dos Estudantes, Rua do Comércio, Rua do Sítio [inativo], Rua Bela Vista)",
   );
 
   // ── 5b. Vinculo de administradores a imoveis (Funcionalidade 1: acesso restrito por imovel) ──
@@ -451,8 +484,51 @@ async function main() {
   await criarContratoComCaucaoParcelada(imovel4.id, inquilino4.id, 1, 15, 3000, 3000);
   console.log(
     "✓ 3 contratos ativos: 2 com ~6 meses de histórico padrão, 1 com caução parcelada em 3x (1 paga, 1 atrasada, 1 pendente) " +
-      "(imóvel 3 fica vago; imóvel 5 fica inativo; inquilino 3 fica sem contrato)",
+      "(imóvel 3 fica vago; imóvel 5 fica inativo)",
   );
+
+  // ── 6b. Contrato pendente de aprovacao (Ajuste 1: aprovacao de contratos) ─
+  // Simula um Administrador cadastrando um contrato: nasce com
+  // statusAprovacao="pendente_aprovacao", sem gerar pagamentos nem ocupar o
+  // imovel ainda (isso so acontece quando o Proprietario aprova, via
+  // POST /contratos/:id/aprovar - ver contratos.service.ts).
+  const contratoPendenteExistente = await prisma.contrato.findFirst({ where: { imovelId: imovel6.id } });
+  let contratoPendente = contratoPendenteExistente;
+  if (!contratoPendente) {
+    const dataInicioPendente = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const dataFimPendente = new Date(dataInicioPendente.getFullYear() + 1, dataInicioPendente.getMonth(), 1);
+    contratoPendente = await prisma.contrato.create({
+      data: {
+        imovelId: imovel6.id,
+        inquilinoId: inquilino3.id,
+        dataInicio: dataInicioPendente,
+        dataFim: dataFimPendente,
+        diaVencimento: 10,
+        valorAluguel: 1600,
+        status: "ativo",
+        statusAprovacao: "pendente_aprovacao",
+        criadoPorId: admin1.id,
+      },
+    });
+  }
+  console.log("✓ 1 contrato aguardando aprovação do Proprietário (cadastrado por administrador1, imóvel Rua Bela Vista)");
+
+  // Email mockado correspondente (Ajuste 1: notificacao de contrato pendente).
+  await prisma.emailEnviado.upsert({
+    where: { id: "seed-email-1" },
+    update: {},
+    create: {
+      id: "seed-email-1",
+      destinatario: "admin@sistema.com",
+      assunto: "[Sistema de Aluguéis] Novo contrato aguardando aprovação",
+      corpo:
+        "Um novo contrato foi cadastrado por um Administrador e aguarda sua aprovação.\n\n" +
+        "Imóvel: Rua Bela Vista, 88\nInquilino: Pedro Lima\nValor do aluguel: R$ 1600.00\n\n" +
+        'Acesse a tela "Contratos Pendentes" no sistema para aprovar ou rejeitar.',
+      modoMock: true,
+    },
+  });
+  console.log("✓ 1 email mockado de exemplo (tela Emails Enviados)");
 
   // ── 7. Gastos de manutencao (variados) ───────────────────────────────────
   const gastosExistentes = await prisma.gastoManutencao.count({
@@ -505,6 +581,29 @@ async function main() {
     });
   }
   console.log("✓ gastos de manutenção (pintura, hidráulica, elétrica, limpeza)");
+
+  // ── 7b. Manutencao recorrente (Ajuste 11) ────────────────────────────────
+  // So a origem precisa ser semeada: as proximas instancias sao geradas de
+  // forma preguicosa na proxima vez que GET /manutencao for chamado.
+  const manutencaoRecorrenteExistente = await prisma.gastoManutencao.findFirst({
+    where: { imovelId: imovel3.id, recorrencia: "mensal" },
+  });
+  if (!manutencaoRecorrenteExistente) {
+    await prisma.gastoManutencao.create({
+      data: {
+        imovelId: imovel3.id,
+        descricao: "Limpeza mensal da kitnet",
+        categoria: "limpeza",
+        valor: 150,
+        dataExecucao: new Date(hoje.getFullYear(), hoje.getMonth(), 1),
+        prestadorNome: "Limpeza Express",
+        status: "orcamento",
+        origem: "proprietario",
+        recorrencia: "mensal",
+      },
+    });
+  }
+  console.log("✓ 1 manutenção recorrente mensal (limpeza da kitnet - próximas ocorrências geradas ao abrir a tela)");
 
   // ── 8. Pagamentos de administrador (ultimos 3 meses, 2 administradores) ──
   const pagAdminExistentes = await prisma.pagamentoAdministrador.count({

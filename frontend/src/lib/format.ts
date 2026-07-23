@@ -37,3 +37,10 @@ export function paraInputData(data: string | null | undefined): string {
   if (!data) return "";
   return data.slice(0, 10);
 }
+
+export function formatarTamanhoArquivo(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

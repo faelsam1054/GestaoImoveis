@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Building2 } from "lucide-react";
 import {
   listarImoveis,
   criarImovel,
@@ -22,6 +22,8 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CurrencyInput } from "@/components/currency-input";
+import { EmptyState } from "@/components/empty-state";
+import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -224,48 +226,113 @@ export function ImoveisPage() {
         )}
       </div>
 
-      <div className="rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Endereço</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Valor base</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            )}
-            {!isLoading && imoveis.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Nenhum imóvel encontrado.
-                </TableCell>
-              </TableRow>
-            )}
+      {isLoading && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+          Carregando...
+        </div>
+      )}
+      {!isLoading && imoveis.length === 0 && (
+        <EmptyState
+          icon={Building2}
+          titulo="Nenhum imóvel encontrado"
+          descricao="Ajuste os filtros ou cadastre um novo imóvel para começar."
+        />
+      )}
+
+      {!isLoading && imoveis.length > 0 && (
+        <>
+          {/* Desktop/tablet: tabela */}
+          <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Endereço</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Valor base</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {imoveis.map((imovel) => (
+                  <TableRow key={imovel.id}>
+                    <TableCell>
+                      <Link to={`/imoveis/${imovel.id}`} className="font-medium hover:underline">
+                        {imovel.logradouro}, {imovel.numero}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {imovel.bairro}, {imovel.cidade} - {imovel.estado}
+                      </p>
+                    </TableCell>
+                    <TableCell>{imovel.tipoImovel?.nome ?? "-"}</TableCell>
+                    <TableCell>{formatarMoeda(imovel.valorAluguelBase)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={imovel.excluidoEm ? "excluido" : imovel.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/imoveis/${imovel.id}`}>Ver detalhes</Link>
+                      </Button>
+                      {imovel.excluidoEm ? (
+                        ehProprietario && (
+                          <Button variant="ghost" size="sm" onClick={() => mutRestaurar.mutate(imovel.id)}>
+                            Restaurar
+                          </Button>
+                        )
+                      ) : (
+                        <>
+                          {podeEditar && (
+                            <Button variant="ghost" size="sm" onClick={() => abrirEdicao(imovel)}>
+                              Editar
+                            </Button>
+                          )}
+                          {podeEditar && imovel.status === "inativo" && (
+                            <Button variant="ghost" size="sm" onClick={() => mutAtivar.mutate(imovel.id)}>
+                              Ativar
+                            </Button>
+                          )}
+                          {podeEditar && imovel.status !== "inativo" && imovel.status !== "alugado" && (
+                            <Button variant="ghost" size="sm" onClick={() => mutDesativar.mutate(imovel.id)}>
+                              Desativar
+                            </Button>
+                          )}
+                          {ehProprietario && imovel.status !== "alugado" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => setExcluindo(imovel)}
+                            >
+                              Excluir
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: cards */}
+          <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
             {imoveis.map((imovel) => (
-              <TableRow key={imovel.id}>
-                <TableCell>
-                  <Link to={`/imoveis/${imovel.id}`} className="font-medium hover:underline">
-                    {imovel.logradouro}, {imovel.numero}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {imovel.bairro}, {imovel.cidade} - {imovel.estado}
-                  </p>
-                </TableCell>
-                <TableCell>{imovel.tipoImovel?.nome ?? "-"}</TableCell>
-                <TableCell>{formatarMoeda(imovel.valorAluguelBase)}</TableCell>
-                <TableCell>
+              <MobileRowCard key={imovel.id}>
+                <MobileRowCardHeader>
+                  <div className="min-w-0">
+                    <Link to={`/imoveis/${imovel.id}`} className="font-medium hover:underline">
+                      {imovel.logradouro}, {imovel.numero}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {imovel.bairro}, {imovel.cidade} - {imovel.estado}
+                    </p>
+                  </div>
                   <StatusBadge status={imovel.excluidoEm ? "excluido" : imovel.status} />
-                </TableCell>
-                <TableCell className="text-right">
+                </MobileRowCardHeader>
+                <MobileRowField label="Tipo" value={imovel.tipoImovel?.nome ?? "-"} />
+                <MobileRowField label="Valor base" value={formatarMoeda(imovel.valorAluguelBase)} />
+                <MobileRowActions>
                   <Button variant="ghost" size="sm" asChild>
                     <Link to={`/imoveis/${imovel.id}`}>Ver detalhes</Link>
                   </Button>
@@ -304,12 +371,12 @@ export function ImoveisPage() {
                       )}
                     </>
                   )}
-                </TableCell>
-              </TableRow>
+                </MobileRowActions>
+              </MobileRowCard>
             ))}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+        </>
+      )}
 
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">

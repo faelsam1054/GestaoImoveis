@@ -31,11 +31,19 @@ function criarFileFilter(tiposPermitidos: Set<string>, mensagemErro: string) {
   };
 }
 
+const TAMANHO_MAXIMO_PADRAO = 5 * 1024 * 1024;
+
 // subpasta: "imoveis", "manutencao", "pagamentos-admin" etc. Usada tanto para
 // organizar o disco quanto para montar a URL publica servida em /uploads/<subpasta>.
 // tiposPermitidos: por padrao aceita imagem+PDF; passe um subconjunto (ex: so PDF)
 // para restringir o upload em rotas especificas.
-export function criarUploadMiddleware(subpasta: string, tiposPermitidos: Set<string> = TIPOS_PERMITIDOS) {
+// maxSizeBytes: por padrao 5MB; algumas rotas (ex: contrato assinado) pedem um
+// limite proprio, entao e configuravel por instancia em vez de global fixo.
+export function criarUploadMiddleware(
+  subpasta: string,
+  tiposPermitidos: Set<string> = TIPOS_PERMITIDOS,
+  maxSizeBytes: number = TAMANHO_MAXIMO_PADRAO,
+) {
   const somentePdf = tiposPermitidos.size === 1 && tiposPermitidos.has("application/pdf");
   const mensagemErro = somentePdf
     ? "Tipo de arquivo nao permitido. Envie um PDF."
@@ -43,11 +51,33 @@ export function criarUploadMiddleware(subpasta: string, tiposPermitidos: Set<str
 
   return multer({
     storage: storageParaSubpasta(subpasta),
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: { fileSize: maxSizeBytes },
     fileFilter: criarFileFilter(tiposPermitidos, mensagemErro),
   });
 }
 
 export function montarUrlArquivo(subpasta: string, filename: string): string {
   return `/uploads/${subpasta}/${filename}`;
+}
+
+// Reverte montarUrlArquivo para obter o caminho absoluto no disco (ex: para
+// servir via res.download em rotas que exigem autenticacao/checagem de
+// acesso, diferente dos arquivos servidos publicamente em /uploads estatico).
+export function caminhoFisico(url: string): string {
+  const relativo = url.replace(/^\/uploads\//, "");
+  return path.join(env.UPLOADS_DIR, relativo);
+}
+
+// Reverte montarUrlArquivo para apagar o arquivo do disco (ex: ao substituir
+// ou remover um comprovante/anexo). Falha silenciosamente se o arquivo ja
+// nao existir (ENOENT) - o objetivo e so evitar acumular lixo, nao e critico.
+export function removerArquivoFisico(url: string | null | undefined): void {
+  if (!url) return;
+  const relativo = url.replace(/^\/uploads\//, "");
+  const caminho = path.join(env.UPLOADS_DIR, relativo);
+  fs.unlink(caminho, (err) => {
+    if (err && err.code !== "ENOENT") {
+      console.error("Falha ao remover arquivo do disco:", caminho, err);
+    }
+  });
 }

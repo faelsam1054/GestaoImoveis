@@ -11,7 +11,9 @@ router.get("/", authorizePermissao("podeVerAdministradores"), controller.listar)
 router.get("/:id", authorizePermissao("podeVerAdministradores"), controller.detalhar);
 router.post("/", requireRole("proprietario"), controller.criar);
 router.put("/:id", requireRole("proprietario"), controller.atualizar);
-router.delete("/:id", requireRole("proprietario"), controller.desativar);
+router.patch("/:id/desativar", requireRole("proprietario"), controller.desativar);
+router.patch("/:id/reativar", requireRole("proprietario"), controller.reativar);
+router.delete("/:id", requireRole("proprietario"), controller.excluir);
 router.patch("/:id/resetar-senha", requireRole("proprietario"), controller.resetarSenha);
 router.get("/:id/permissoes", requireRole("proprietario"), controller.obterPermissoes);
 router.put("/:id/permissoes", requireRole("proprietario"), controller.atualizarPermissoes);

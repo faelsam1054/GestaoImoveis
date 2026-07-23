@@ -61,7 +61,38 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarAdmini
 
 export async function desativar(id: string) {
   await buscarPorIdOuFalhar(id);
-  await prisma.usuario.update({ where: { id }, data: { ativo: false } });
+  await prisma.usuario.update({ where: { id }, data: { ativo: false, desativadoEm: new Date() } });
+}
+
+export async function reativar(id: string) {
+  await buscarPorIdOuFalhar(id);
+  await prisma.usuario.update({ where: { id }, data: { ativo: true, desativadoEm: null } });
+}
+
+async function possuiAcoesRegistradas(usuarioId: string): Promise<boolean> {
+  const [logs, contratosCriados, contratosAprovados, recibos, pagamentosComoAdmin] = await Promise.all([
+    prisma.logAuditoria.count({ where: { usuarioId } }),
+    prisma.contrato.count({ where: { criadoPorId: usuarioId } }),
+    prisma.contrato.count({ where: { aprovadoPorId: usuarioId } }),
+    prisma.reciboPdf.count({ where: { geradoPorId: usuarioId } }),
+    prisma.pagamentoAdministrador.count({ where: { administradorId: usuarioId } }),
+  ]);
+  return logs + contratosCriados + contratosAprovados + recibos + pagamentosComoAdmin > 0;
+}
+
+// Hard delete: so permitido se o administrador nunca deixou rastro (logs,
+// contratos, recibos, mensalidades). Vinculos de imovel e permissoes sao
+// apenas configuracao (cascade automatico via onDelete: Cascade no schema),
+// nao contam como "acao registrada".
+export async function excluir(id: string) {
+  await buscarPorIdOuFalhar(id);
+  if (await possuiAcoesRegistradas(id)) {
+    throw new AppError(
+      "Este Administrador possui ações registradas no sistema (contratos, recibos, mensalidades, auditoria) e não pode ser excluído definitivamente. Desative-o em vez disso.",
+      409,
+    );
+  }
+  await prisma.usuario.delete({ where: { id } });
 }
 
 export async function resetarSenha(id: string) {

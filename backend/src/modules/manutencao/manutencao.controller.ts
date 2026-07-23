@@ -9,8 +9,9 @@ import {
   listarManutencaoQuerySchema,
 } from "./manutencao.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { montarUrlArquivo } from "../../middlewares/upload.middleware";
+import { montarUrlArquivo, caminhoFisico } from "../../middlewares/upload.middleware";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
+import fs from "node:fs";
 import type { Request } from "express";
 
 async function garantirAcesso(req: Request, imovelId: string) {
@@ -50,6 +51,9 @@ export const atualizar = asyncHandler(async (req, res) => {
   const data = atualizarGastoManutencaoSchema.parse(req.body);
   const antes = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, antes.imovelId);
+  if (data.imovelId && data.imovelId !== antes.imovelId) {
+    await garantirAcesso(req, data.imovelId);
+  }
   const gasto = await service.atualizar(paramId(req), data);
   await registrarAuditoria({
     usuarioId: req.user!.id,
@@ -85,6 +89,91 @@ export const anexarComprovante = asyncHandler(async (req, res) => {
   await garantirAcesso(req, antes.imovelId);
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
   const url = montarUrlArquivo("manutencao", req.file.filename);
-  const gasto = await service.anexarComprovante(paramId(req), url);
+  const gasto = await service.anexarComprovante(paramId(req), url, req.file.originalname, req.file.size);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "ANEXAR_COMPROVANTE_MANUTENCAO",
+    entidade: "GastoManutencao",
+    entidadeId: gasto.id,
+    dadosAntes: { comprovantePdfUrl: antes.comprovantePdfUrl },
+    dadosDepois: { comprovantePdfUrl: url },
+    ip: getClientIp(req),
+  });
   res.json(gasto);
+});
+
+export const baixarComprovante = asyncHandler(async (req, res) => {
+  const gasto = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, gasto.imovelId);
+  if (!gasto.comprovantePdfUrl) throw new AppError("Este gasto de manutencao nao possui comprovante anexado", 404);
+
+  const caminho = caminhoFisico(gasto.comprovantePdfUrl);
+  if (!fs.existsSync(caminho)) {
+    throw new AppError("O arquivo do comprovante nao foi encontrado no servidor", 404);
+  }
+  res.download(caminho, gasto.comprovanteNomeOriginal ?? "comprovante.pdf");
+});
+
+export const removerComprovante = asyncHandler(async (req, res) => {
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, antes.imovelId);
+  const gasto = await service.removerComprovante(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "REMOVER_COMPROVANTE_MANUTENCAO",
+    entidade: "GastoManutencao",
+    entidadeId: gasto.id,
+    ip: getClientIp(req),
+  });
+  res.json(gasto);
+});
+
+export const excluir = asyncHandler(async (req, res) => {
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, antes.imovelId);
+  await service.excluir(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DELETE_GASTO_MANUTENCAO",
+    entidade: "GastoManutencao",
+    entidadeId: paramId(req),
+    dadosAntes: antes,
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const pausarRecorrencia = asyncHandler(async (req, res) => {
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, antes.imovelId);
+  const gasto = await service.pausarRecorrencia(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "PAUSAR_RECORRENCIA_MANUTENCAO",
+    entidade: "GastoManutencao",
+    entidadeId: gasto.id,
+    ip: getClientIp(req),
+  });
+  res.json(gasto);
+});
+
+export const retomarRecorrencia = asyncHandler(async (req, res) => {
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, antes.imovelId);
+  const gasto = await service.retomarRecorrencia(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RETOMAR_RECORRENCIA_MANUTENCAO",
+    entidade: "GastoManutencao",
+    entidadeId: gasto.id,
+    ip: getClientIp(req),
+  });
+  res.json(gasto);
+});
+
+export const listarRecorrencias = asyncHandler(async (req, res) => {
+  const antes = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, antes.imovelId);
+  const instancias = await service.listarRecorrencias(paramId(req));
+  res.json(instancias);
 });

@@ -17,27 +17,42 @@ const ROTULOS: Record<string, string> = {
   aprovado: "Aprovado",
   executado: "Executado",
   excluido: "Excluído",
+  pendente_aprovacao: "Aguardando Aprovação",
+  rejeitado: "Rejeitado",
+  mensal: "Mensal",
+  trimestral: "Trimestral",
+  semestral: "Semestral",
+  anual: "Anual",
 };
 
-// Classes de cor explicitas (o Badge do shadcn nao tem variantes success/warning
-// prontas): verde para estados concluidos/positivos, ambar para pendentes,
-// vermelho para atrasos/cancelamentos, cinza para neutros/encerrados.
+// Cores semanticas via tokens do tema (success/warning/destructive/primary),
+// consistentes automaticamente entre light e dark mode: emerald para estados
+// concluidos/positivos, amber para pendentes/em andamento, rose para atrasos/
+// cancelamentos, indigo para informativos, slate para neutros/encerrados.
+const AMBER = "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
+
 const CORES: Record<string, string> = {
-  vago: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  alugado: "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300",
-  manutencao: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
+  vago: AMBER,
+  alugado: "bg-success/15 text-success",
+  manutencao: AMBER,
   inativo: "bg-muted text-muted-foreground",
-  ativo: "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300",
+  ativo: "bg-primary/10 text-primary",
   encerrado: "bg-muted text-muted-foreground",
-  rescindido: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
-  renovado: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  pendente: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  pago: "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-300",
-  atrasado: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  rescindido: "bg-destructive/10 text-destructive",
+  renovado: "bg-primary/10 text-primary",
+  pendente: AMBER,
+  pago: "bg-success/15 text-success",
+  atrasado: "bg-destructive/10 text-destructive",
   orcamento: "bg-muted text-muted-foreground",
-  aprovado: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300",
-  executado: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300",
-  excluido: "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300",
+  aprovado: "bg-primary/10 text-primary",
+  executado: AMBER,
+  excluido: "bg-destructive/10 text-destructive",
+  pendente_aprovacao: AMBER,
+  rejeitado: "bg-destructive/10 text-destructive",
+  mensal: "bg-primary/10 text-primary",
+  trimestral: "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300",
+  semestral: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
+  anual: "bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300",
 };
 
 export function StatusBadge({ status }: { status: string }) {

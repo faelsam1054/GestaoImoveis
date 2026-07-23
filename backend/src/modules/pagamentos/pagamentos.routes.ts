@@ -12,5 +12,10 @@ router.get("/:id", authorizePermissao("podeVerPagamentos"), controller.detalhar)
 router.post("/", authorizePermissao("podeRegistrarPagamentos"), controller.criarAvulso);
 router.put("/:id", authorizePermissao("podeRegistrarPagamentos"), controller.atualizar);
 router.patch("/:id/pagar", authorizePermissao("podeRegistrarPagamentos"), controller.marcarComoPago);
+router.post(
+  "/:id/desfazer-pagamento",
+  authorizePermissao("podeRegistrarPagamentos"),
+  controller.desfazerPagamento,
+);
 
 export default router;

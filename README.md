@@ -11,7 +11,8 @@ dashboard e relatórios exportáveis.
 |---|---|
 | Backend | Node.js, Express 5, TypeScript, Prisma ORM, SQLite |
 | Autenticação | JWT (access + refresh token), bcrypt, rate limiting |
-| PDF | pdfkit |
+| PDF | pdfkit (geração), react-pdf (pré-visualização no frontend) |
+| Email | nodemailer (mockado por padrão via `EMAIL_MOCK`, ver "Variáveis de ambiente") |
 | Frontend | React 19, Vite, TypeScript, Tailwind CSS v4, shadcn/ui |
 | Dados/estado | React Query, React Router |
 | Gráficos | Recharts |
@@ -91,20 +92,26 @@ npm run build:frontend# gera o build de produção do frontend
 | Perfil | Email | Senha | Observação |
 |---|---|---|---|
 | Proprietário | `admin@sistema.com` | `admin123` | Acesso total ao sistema |
+| Proprietário | `proprietario2@sistema.com` | `admin123` | Segundo Proprietário — mesmo acesso total, para testar múltiplos Proprietários |
 | Administrador | `administrador1@sistema.com` | `demo1234` | Permissões amplas (imóveis, inquilinos, contratos, pagamentos, manutenção) |
 | Administrador | `administrador2@sistema.com` | `demo1234` | Permissões restritas a leitura (sem gerenciar inquilinos) |
 | Inquilino | `inquilino1@sistema.com` | `demo1234` | Possui contrato ativo, com histórico de pagamentos |
 | Inquilino | `inquilino2@sistema.com` | `demo1234` | Possui contrato ativo |
-| Inquilino | `inquilino3@sistema.com` | `demo1234` | Sem contrato ativo (para testar o estado "sem imóvel") |
+| Inquilino | `inquilino3@sistema.com` | `demo1234` | Sem contrato *aprovado* (tem uma solicitação de contrato aguardando aprovação do Proprietário — ver abaixo) |
 | Inquilino | `inquilino4@sistema.com` | `demo1234` | Contrato com caução parcelada em 3x (1 parcela paga, 1 atrasada, 1 pendente) |
 
 O seed também cria os 6 tipos de imóvel padrão (Casa, Apartamento, Kitnet, Sala
-Comercial, Galpão, Terreno) e 5 imóveis: 3 com o histórico de contratos/pagamentos
-padrão descrito acima, 1 com o contrato de caução parcelada do `inquilino4` e 1
-**inativo** (fora de oferta, para testar o fluxo de ativar/desativar imóvel).
-`administrador1` fica vinculado a 2 imóveis e `administrador2` a 1 (para testar o
-acesso restrito por imóvel), além de gastos de manutenção variados e mensalidades
-de administrador dos últimos 3 meses.
+Comercial, Galpão, Terreno) e 6 imóveis: 3 com o histórico de contratos/pagamentos
+padrão descrito acima, 1 com o contrato de caução parcelada do `inquilino4`, 1
+**inativo** (fora de oferta, para testar o fluxo de ativar/desativar imóvel) e 1
+vago com um contrato **aguardando aprovação** (cadastrado por `administrador1`
+para `inquilino3` — faça login como Proprietário e veja o sino "Contratos
+Pendentes" no menu, além de um email mockado correspondente em "Emails
+Enviados"). `administrador1` fica vinculado a 2 imóveis e `administrador2` a 1
+(para testar o acesso restrito por imóvel), além de gastos de manutenção
+variados (incluindo uma limpeza **mensal recorrente**, que gera automaticamente
+as próximas ocorrências ao abrir a tela de Manutenção) e mensalidades de
+administrador dos últimos 3 meses.
 
 `db:seed` também é seguro de rodar depois de já ter usado o sistema de verdade:
 ele nunca sobrescreve dados fora dos IDs/e-mails fixos que ele mesmo criou, e
@@ -123,37 +130,99 @@ inadimplência histórica, manutenção por categoria — todos exportáveis em
 CSV, o financeiro também em PDF), configurações (dados próprios, troca de
 senha, log de auditoria). Pode resetar a senha de qualquer Inquilino ou
 Administrador (gera uma nova senha temporária e revoga as sessões ativas da
-conta). Imóveis e Inquilinos têm um ciclo de vida completo — Ativo / Inativo /
-Excluído (soft delete: oculta da listagem sem apagar o histórico de contratos e
-pagamentos, com opção de restaurar).
+conta).
+
+Pode haver **múltiplos Proprietários**: qualquer Proprietário pode cadastrar
+outro com o mesmo acesso total (tela "Proprietários"), com as mesmas
+salvaguardas de segurança que os demais módulos (não é possível desativar,
+excluir ou ficar sem nenhum Proprietário ativo no sistema, nem autoexcluir a
+própria conta).
+
+Imóveis e Inquilinos têm um ciclo de vida com 3 estados — Ativo / Inativo /
+**Excluído** (soft delete: oculta da listagem sem apagar o histórico de
+contratos e pagamentos, com opção de **restaurar**). Administradores,
+Proprietários e Contratos seguem um padrão diferente e mais recente: apenas
+**Ativo / Inativo** (desativa o login ou oculta da listagem padrão, sem
+"excluído" intermediário) mais uma **exclusão definitiva** (hard delete, sem
+volta) — só permitida quando o registro não tem nenhuma ação/histórico
+associado (senão o sistema recusa com um erro claro e sugere apenas
+desativar) — protegida por confirmação dupla (checkbox + digitar um campo de
+confirmação) no frontend.
+
+**Aprovação de contratos**: contratos cadastrados pelo próprio Proprietário
+entram em vigor imediatamente; os cadastrados por um Administrador nascem como
+"aguardando aprovação" — não geram pagamentos nem ocupam o imóvel até o
+Proprietário aprovar ou rejeitar (com motivo) na tela "Contratos Pendentes",
+que também mostra um contador no menu lateral. Cada aprovação/rejeição/
+cadastro pendente dispara um e-mail (mockado por padrão — ver `EMAIL_MOCK` em
+"Variáveis de ambiente" — com histórico visível na tela "Emails Enviados").
 
 **Administrador** — reaproveita as mesmas telas do Proprietário, mas cada
 módulo só aparece/é editável conforme a permissão concedida pelo Proprietário,
 e cada listagem (imóveis, inquilinos, contratos, pagamentos, manutenção) é
 automaticamente restrita aos imóveis vinculados a ele. Nunca tem acesso a
-Dashboard, Relatórios, Configurações ou à própria mensalidade (apenas o
-Proprietário vê e registra o pagamento do Administrador).
+Dashboard, Relatórios, Configurações, Proprietários ou à própria mensalidade
+(apenas o Proprietário vê e registra o pagamento do Administrador). Contratos
+que cadastra ficam pendentes de aprovação (ver acima).
 
 **Inquilino** — vê apenas os próprios dados: imóvel alugado com o próximo
 vencimento em destaque, contrato vigente (com download em PDF — a versão
 assinada enviada pelo Proprietário tem prioridade sobre a gerada
-automaticamente pelo sistema), histórico de pagamentos (com download de
-recibo em PDF), possibilidade de relatar um problema no imóvel (abre um
-chamado de manutenção pendente de aprovação do Proprietário), e edição do
-próprio perfil/senha.
+automaticamente pelo sistema; só aparece depois que o contrato é aprovado),
+histórico de pagamentos (com download de recibo em PDF), possibilidade de
+relatar um problema no imóvel (abre um chamado de manutenção pendente de
+aprovação do Proprietário), e edição do próprio perfil/senha.
 
 ### Contratos
 
-Além do CRUD básico (criar, renovar, encerrar, rescindir), cada contrato tem
-uma página de detalhe própria com:
+Além do CRUD básico (criar, renovar, encerrar, rescindir, desativar/reativar/
+excluir), cada contrato tem uma página de detalhe própria com:
 
 - **Caução parcelada**: ao criar/renovar um contrato, a caução pode ser
   parcelada em até 3x. Cada parcela tem vencimento, status (pendente/pago/
   atrasado) e recibo em PDF próprio ao ser paga; parcelas já pagas não podem
   mais ser alteradas ou removidas.
-- **Upload do contrato assinado**: o Proprietário/Administrador pode anexar o
-  PDF do contrato fisicamente assinado (distinto do PDF gerado automaticamente
-  pelo sistema), substituí-lo ou removê-lo a qualquer momento.
+- **Upload do contrato assinado**: opcional tanto no cadastro quanto depois —
+  o Proprietário/Administrador pode anexar o PDF do contrato fisicamente
+  assinado a qualquer momento (distinto do PDF gerado automaticamente pelo
+  sistema), substituí-lo ou removê-lo.
+- **Aditivos contratuais**: aba própria para anexar PDFs de aditivo (registrando
+  alterações como reajuste de valor), com descrição e valor anterior/novo;
+  disponível tanto no fluxo de renovação (vinculando ao contrato anterior)
+  quanto avulso em qualquer contrato ativo. Download exige autenticação (ao
+  contrário dos demais PDFs do sistema, servidos como arquivo estático).
+- **Aprovação** (ver seção acima) e **desativar/reativar/excluir** (exclusão
+  definitiva só permitida sem pagamentos/parcelas de caução vinculados — na
+  prática, contratos pendentes ou rejeitados).
+
+### Manutenção
+
+- **Editar e excluir** qualquer gasto já cadastrado (não só avançar o status):
+  formulário completo reaproveitado, incluindo trocar o imóvel, corrigir um
+  "pago" por engano (limpa data/forma de pagamento automaticamente, com
+  confirmação) e substituir/remover o comprovante. Exclusão é soft delete
+  (mantém o histórico financeiro) com confirmação dupla; o arquivo do
+  comprovante, porém, é sempre apagado do disco de verdade.
+- **Visualizar comprovante**: pré-visualização da primeira página do PDF
+  diretamente na tela de detalhe (sem precisar baixar), além de baixar/
+  substituir/remover.
+- **Recorrência mensal/trimestral/semestral/anual**: ao marcar uma manutenção
+  como recorrente (ex: limpeza mensal), o sistema gera automaticamente as
+  próximas ocorrências (até 3 meses à frente) sempre que a tela de Manutenção é
+  aberta. Cada ocorrência gerada é um gasto independente — editar, pagar ou
+  excluir uma não afeta as outras. A recorrência pode ser pausada/retomada a
+  qualquer momento na tela de detalhe, que também lista todas as ocorrências
+  já geradas.
+
+### Pagamentos
+
+- **Filtros por período**: abas "Este Mês", "Próximo Mês" (padrão — o objetivo
+  é ver só o que vence em breve, não todos os pendentes de uma vez),
+  "Atrasados", "Todos" e "Pagos", cada uma com contador no próprio label; um
+  seletor de mês/ano permite navegar para qualquer mês além do atual/seguinte.
+- **Desfazer pagamento**: reverte um "marcar como pago" feito por engano,
+  voltando o status para pendente; opcionalmente remove também o recibo em PDF
+  gerado (checkbox marcado por padrão no modal de confirmação).
 
 ## Segurança
 

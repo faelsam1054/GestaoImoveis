@@ -18,6 +18,7 @@ export interface FiltrosContrato {
   status?: StatusContrato;
   imovelId?: string;
   inquilinoId?: string;
+  ativoFiltro?: "ativos" | "todos" | "inativos";
 }
 
 export async function listarContratos(filtros: FiltrosContrato = {}): Promise<Paginado<Contrato>> {
@@ -62,4 +63,33 @@ export async function enviarContratoAssinado(id: string, arquivo: File): Promise
 export async function removerContratoAssinado(id: string): Promise<Contrato> {
   const { data } = await api.delete(`/contratos/${id}/contrato-assinado`);
   return data;
+}
+
+export async function listarContratosPendentes(): Promise<Contrato[]> {
+  const { data } = await api.get("/contratos/pendentes-aprovacao");
+  return data;
+}
+
+export async function aprovarContrato(id: string): Promise<Contrato> {
+  const { data } = await api.post(`/contratos/${id}/aprovar`);
+  return data;
+}
+
+export async function rejeitarContrato(id: string, motivoRejeicao: string): Promise<Contrato> {
+  const { data } = await api.post(`/contratos/${id}/rejeitar`, { motivoRejeicao });
+  return data;
+}
+
+export async function desativarContrato(id: string): Promise<Contrato> {
+  const { data } = await api.patch(`/contratos/${id}/desativar`);
+  return data;
+}
+
+export async function reativarContrato(id: string): Promise<Contrato> {
+  const { data } = await api.patch(`/contratos/${id}/reativar`);
+  return data;
+}
+
+export async function excluirContrato(id: string): Promise<void> {
+  await api.delete(`/contratos/${id}`);
 }

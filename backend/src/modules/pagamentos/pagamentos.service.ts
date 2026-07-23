@@ -2,7 +2,13 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarReciboPdf } from "../../services/pdf/recibo.pdf";
-import type { criarPagamentoAvulsoSchema, atualizarPagamentoSchema, marcarPagoSchema } from "./pagamentos.schema";
+import { removerArquivoFisico } from "../../middlewares/upload.middleware";
+import type {
+  criarPagamentoAvulsoSchema,
+  atualizarPagamentoSchema,
+  marcarPagoSchema,
+  desfazerPagamentoSchema,
+} from "./pagamentos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
 
@@ -148,4 +154,27 @@ async function gerarEAnexarRecibo(
   } catch (err) {
     console.error("Falha ao gerar recibo em PDF:", err);
   }
+}
+
+// Reverte um "marcar como pago" feito por engano. O status volta para
+// "pendente" mesmo se o vencimento ja passou - a proxima leitura (via
+// atualizarAtrasados, que roda no topo de listar/buscarPorIdOuFalhar) ja
+// promove automaticamente para "atrasado" quando for o caso, entao nao ha
+// necessidade de recalcular isso aqui.
+export async function desfazerPagamento(id: string, data: z.infer<typeof desfazerPagamentoSchema>) {
+  const pagamento = await buscarPorIdOuFalhar(id);
+  if (pagamento.status !== "pago") {
+    throw new AppError("Este pagamento nao esta marcado como pago", 409);
+  }
+
+  if (data.removerRecibo && pagamento.recibo) {
+    removerArquivoFisico(pagamento.recibo.caminhoArquivo);
+    await prisma.reciboPdf.delete({ where: { id: pagamento.recibo.id } });
+  }
+
+  return prisma.pagamento.update({
+    where: { id },
+    data: { status: "pendente", valorPago: null, dataPagamento: null, formaPagamento: null },
+    include: includePadrao,
+  });
 }

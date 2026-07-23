@@ -23,6 +23,10 @@ export const marcarPagoSchema = z.object({
   observacoes: z.string().optional(),
 });
 
+export const desfazerPagamentoSchema = z.object({
+  removerRecibo: z.boolean().default(true),
+});
+
 export const listarPagamentosQuerySchema = z.object({
   status: z.enum(STATUS_PAGAMENTO).optional(),
   contratoId: z.string().optional(),

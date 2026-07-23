@@ -36,23 +36,24 @@ export function DashboardPage() {
             <StatTile
               label="Imóveis"
               value={`${resumo.imoveis.alugados} alugados / ${resumo.imoveis.total} total`}
-              icon={<Building2 className="h-4 w-4 text-muted-foreground" />}
+              icon={<Building2 className="h-5 w-5" />}
             />
             <StatTile
               label="Receita recebida (mês)"
               value={formatarMoeda(resumo.financeiro.receitaRecebidaMes)}
-              icon={<TrendingUp className="h-4 w-4 text-muted-foreground" />}
+              icon={<TrendingUp className="h-5 w-5" />}
               tone="success"
             />
             <StatTile
               label="Despesas (mês)"
               value={formatarMoeda(resumo.financeiro.despesasMes)}
-              icon={<TrendingDown className="h-4 w-4 text-muted-foreground" />}
+              icon={<TrendingDown className="h-5 w-5" />}
+              tone="critical"
             />
             <StatTile
               label="Lucro líquido (mês)"
               value={formatarMoeda(resumo.financeiro.lucroLiquidoMes)}
-              icon={<Wallet className="h-4 w-4 text-muted-foreground" />}
+              icon={<Wallet className="h-5 w-5" />}
               tone={resumo.financeiro.lucroLiquidoMes >= 0 ? "success" : "critical"}
             />
           </div>
@@ -67,7 +68,7 @@ export function DashboardPage() {
             <StatTile
               label="Inadimplência"
               value={`${resumo.inadimplencia.quantidade} pagamento(s) - ${formatarMoeda(resumo.inadimplencia.valor)}`}
-              icon={<AlertTriangle className="h-4 w-4 text-muted-foreground" />}
+              icon={<AlertTriangle className="h-5 w-5" />}
               tone={resumo.inadimplencia.quantidade > 0 ? "critical" : "default"}
             />
           </div>

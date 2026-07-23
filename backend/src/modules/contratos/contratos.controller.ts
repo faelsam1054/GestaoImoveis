@@ -2,10 +2,17 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { paramId } from "../../utils/params";
 import { AppError } from "../../utils/AppError";
 import * as service from "./contratos.service";
-import { criarContratoSchema, renovarContratoSchema, listarContratosQuerySchema } from "./contratos.schema";
+import {
+  criarContratoSchema,
+  renovarContratoSchema,
+  listarContratosQuerySchema,
+  rejeitarContratoSchema,
+} from "./contratos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 import { montarUrlArquivo } from "../../middlewares/upload.middleware";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
+import * as aditivosService from "../aditivos/aditivos.service";
+import { criarAditivoSchema } from "../aditivos/aditivos.schema";
 import type { Request } from "express";
 
 async function garantirAcesso(req: Request, imovelId: string) {
@@ -29,7 +36,7 @@ export const detalhar = asyncHandler(async (req, res) => {
 export const criar = asyncHandler(async (req, res) => {
   const data = criarContratoSchema.parse(req.body);
   await garantirAcesso(req, data.imovelId);
-  const contrato = await service.criar(data);
+  const contrato = await service.criar(data, { id: req.user!.id, role: req.user!.role });
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "CREATE_CONTRATO",
@@ -39,6 +46,37 @@ export const criar = asyncHandler(async (req, res) => {
     ip: getClientIp(req),
   });
   res.status(201).json(contrato);
+});
+
+export const listarPendentesAprovacao = asyncHandler(async (req, res) => {
+  const contratos = await service.listarPendentesAprovacao();
+  res.json(contratos);
+});
+
+export const aprovar = asyncHandler(async (req, res) => {
+  const contrato = await service.aprovar(paramId(req), req.user!.id);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "APROVAR_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: contrato.id,
+    ip: getClientIp(req),
+  });
+  res.json(contrato);
+});
+
+export const rejeitar = asyncHandler(async (req, res) => {
+  const { motivoRejeicao } = rejeitarContratoSchema.parse(req.body);
+  const contrato = await service.rejeitar(paramId(req), motivoRejeicao);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "REJEITAR_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: contrato.id,
+    dadosDepois: { motivoRejeicao },
+    ip: getClientIp(req),
+  });
+  res.json(contrato);
 });
 
 export const encerrar = asyncHandler(async (req, res) => {
@@ -115,4 +153,71 @@ export const removerContratoAssinado = asyncHandler(async (req, res) => {
     ip: getClientIp(req),
   });
   res.json(contrato);
+});
+
+export const desativar = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, existente.imovelId);
+  const contrato = await service.desativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DESATIVAR_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: contrato.id,
+    ip: getClientIp(req),
+  });
+  res.json(contrato);
+});
+
+export const reativar = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, existente.imovelId);
+  const contrato = await service.reativar(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "REATIVAR_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: contrato.id,
+    ip: getClientIp(req),
+  });
+  res.json(contrato);
+});
+
+export const excluir = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, existente.imovelId);
+  await service.excluir(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DELETE_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: paramId(req),
+    ip: getClientIp(req),
+  });
+  res.status(204).send();
+});
+
+export const criarAditivo = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, existente.imovelId);
+  if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
+  const data = criarAditivoSchema.parse(req.body);
+  const url = montarUrlArquivo("aditivos", req.file.filename);
+  const aditivo = await aditivosService.criar(paramId(req), data, url, req.user!.id);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "CREATE_ADITIVO_CONTRATO",
+    entidade: "AditivoContrato",
+    entidadeId: aditivo.id,
+    dadosDepois: aditivo,
+    ip: getClientIp(req),
+  });
+  res.status(201).json(aditivo);
+});
+
+export const listarAditivos = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  await garantirAcesso(req, existente.imovelId);
+  const aditivos = await aditivosService.listarPorContrato(paramId(req));
+  res.json(aditivos);
 });

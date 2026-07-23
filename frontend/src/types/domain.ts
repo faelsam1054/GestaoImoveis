@@ -1,5 +1,6 @@
 export const STATUS_IMOVEL = ["vago", "alugado", "manutencao", "inativo"] as const;
 export const STATUS_CONTRATO = ["ativo", "encerrado", "rescindido", "renovado"] as const;
+export const STATUS_APROVACAO_CONTRATO = ["aprovado", "pendente_aprovacao", "rejeitado"] as const;
 export const TIPO_PAGAMENTO = ["aluguel", "caucao", "multa", "outro"] as const;
 export const STATUS_PAGAMENTO = ["pendente", "pago", "atrasado"] as const;
 export const FORMA_PAGAMENTO = ["pix", "transferencia", "dinheiro", "boleto", "outro"] as const;
@@ -13,17 +14,20 @@ export const CATEGORIA_MANUTENCAO = [
   "outros",
 ] as const;
 export const STATUS_MANUTENCAO = ["orcamento", "aprovado", "executado", "pago"] as const;
+export const RECORRENCIA_MANUTENCAO = ["unica", "mensal", "trimestral", "semestral", "anual"] as const;
 export const FORMA_PAGAMENTO_ADMIN = ["pix", "transferencia", "dinheiro"] as const;
 export const FORMA_PAGAMENTO_CAUCAO = ["pix", "transferencia", "dinheiro", "outros"] as const;
 export const STATUS_CAUCAO_PARCELA = ["pendente", "pago", "atrasado"] as const;
 
 export type StatusImovel = (typeof STATUS_IMOVEL)[number];
 export type StatusContrato = (typeof STATUS_CONTRATO)[number];
+export type StatusAprovacaoContrato = (typeof STATUS_APROVACAO_CONTRATO)[number];
 export type TipoPagamento = (typeof TIPO_PAGAMENTO)[number];
 export type StatusPagamento = (typeof STATUS_PAGAMENTO)[number];
 export type FormaPagamento = (typeof FORMA_PAGAMENTO)[number];
 export type CategoriaManutencao = (typeof CATEGORIA_MANUTENCAO)[number];
 export type StatusManutencao = (typeof STATUS_MANUTENCAO)[number];
+export type RecorrenciaManutencao = (typeof RECORRENCIA_MANUTENCAO)[number];
 export type FormaPagamentoAdmin = (typeof FORMA_PAGAMENTO_ADMIN)[number];
 export type FormaPagamentoCaucao = (typeof FORMA_PAGAMENTO_CAUCAO)[number];
 export type StatusCaucaoParcela = (typeof STATUS_CAUCAO_PARCELA)[number];
@@ -100,11 +104,43 @@ export interface Contrato {
   valorCaucao: number | null;
   caucaoNumeroParcelas: number;
   status: StatusContrato;
+  ativo: boolean;
+  desativadoEm: string | null;
+  statusAprovacao: StatusAprovacaoContrato;
+  motivoRejeicao: string | null;
+  dataRejeicao: string | null;
+  dataAprovacao: string | null;
+  criadoPorId: string | null;
+  criadoPor?: { nome: string; email: string } | null;
+  aprovadoPorId: string | null;
   contratoAnteriorId: string | null;
   arquivoPdfUrl: string | null;
   contratoAssinadoUrl: string | null;
   pagamentos?: Pagamento[];
   caucaoParcelas?: CaucaoParcela[];
+}
+
+export interface AditivoContrato {
+  id: string;
+  contratoId: string;
+  contratoAnteriorId: string | null;
+  descricaoAlteracoes: string;
+  arquivoPdfUrl: string;
+  dataAditivo: string;
+  valorAnterior: number | null;
+  valorNovo: number | null;
+  criadoPorId: string;
+  criadoPor?: { nome: string; email: string };
+  createdAt: string;
+}
+
+export interface EmailEnviado {
+  id: string;
+  destinatario: string;
+  assunto: string;
+  corpo: string;
+  modoMock: boolean;
+  enviadoEm: string;
 }
 
 export interface CaucaoParcela {
@@ -149,9 +185,18 @@ export interface GastoManutencao {
   prestadorTelefone: string | null;
   status: StatusManutencao;
   dataPagamento: string | null;
+  formaPagamento: FormaPagamento | null;
   comprovantePdfUrl: string | null;
+  comprovanteNomeOriginal: string | null;
+  comprovanteTamanho: number | null;
+  comprovanteUploadEm: string | null;
   observacoes: string | null;
   origem: "proprietario" | "chamado_inquilino";
+  excluidoEm: string | null;
+  recorrencia: RecorrenciaManutencao;
+  dataFimRecorrencia: string | null;
+  ativo: boolean;
+  manutencaoOrigemId: string | null;
 }
 
 export interface PermissaoAdministrador {
@@ -176,6 +221,16 @@ export interface Administrador {
   ativo: boolean;
   permissaoAdministrador: PermissaoAdministrador | null;
   totalImoveisVinculados?: number;
+}
+
+export interface Proprietario {
+  id: string;
+  nome: string;
+  email: string;
+  telefone: string | null;
+  ativo: boolean;
+  precisaTrocarSenha: boolean;
+  createdAt: string;
 }
 
 export interface PagamentoAdministrador {

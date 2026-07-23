@@ -4,7 +4,9 @@ import { obterMeuImovel, listarMeusPagamentos } from "@/api/me";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function MeuImovelPage() {
   const { data: imovel, isLoading: carregandoImovel } = useQuery({
@@ -21,11 +23,26 @@ export function MeuImovelPage() {
     .sort((a, b) => new Date(a.dataVencimento).getTime() - new Date(b.dataVencimento).getTime())[0];
 
   if (carregandoImovel || carregandoPagamentos) {
-    return <p className="text-muted-foreground">Carregando...</p>;
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader titulo="Meu Imóvel" descricao="Dados do imóvel que você aluga atualmente." />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
   }
 
   if (!imovel) {
-    return <p className="text-muted-foreground">Nenhum imóvel vinculado a um contrato ativo no momento.</p>;
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader titulo="Meu Imóvel" descricao="Dados do imóvel que você aluga atualmente." />
+        <EmptyState
+          icon={Home}
+          titulo="Nenhum imóvel vinculado"
+          descricao="Você ainda não possui um contrato ativo vinculado a um imóvel."
+        />
+      </div>
+    );
   }
 
   return (

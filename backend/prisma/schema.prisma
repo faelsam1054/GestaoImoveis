@@ -20,10 +20,12 @@ model Usuario {
   email              String   @unique
   senhaHash          String
   role               String // proprietario | administrador | inquilino
-  ativo              Boolean  @default(true)
-  precisaTrocarSenha Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  telefone           String?
+  ativo              Boolean   @default(true)
+  desativadoEm       DateTime? // timestamp da ultima desativacao (auditoria/consistencia); nao afeta login, so o campo "ativo" faz isso
+  precisaTrocarSenha Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   permissaoAdministrador  PermissaoAdministrador?
   pagamentosComoAdmin     PagamentoAdministrador[] @relation("AdministradorPagamentos")
@@ -32,6 +34,9 @@ model Usuario {
   logsAuditoria           LogAuditoria[]
   recibosGerados          ReciboPdf[]              @relation("GeradoPor")
   imoveisVinculados       AdminImovel[]            @relation("AdminImoveisDoAdministrador")
+  contratosCriados        Contrato[]               @relation("ContratoCriadoPor")
+  contratosAprovados      Contrato[]               @relation("ContratoAprovadoPor")
+  aditivosCriados         AditivoContrato[]
 
   @@index([role])
 }
@@ -178,6 +183,25 @@ model Contrato {
 
   status String @default("ativo") // ativo | encerrado | rescindido | renovado
 
+  // Eixo independente de "status": visibilidade/soft-delete (nao confundir
+  // com status="ativo", que e ciclo de vida). Contrato desativado some da
+  // listagem padrao mas mantem todo o historico de pagamentos/recibos.
+  ativo        Boolean   @default(true)
+  desativadoEm DateTime?
+
+  // Fluxo de aprovacao: contrato criado pelo Proprietario nasce ja 'aprovado'.
+  // Criado por Administrador nasce 'pendente_aprovacao' - so passa a gerar
+  // pagamentos, ocupar o imovel e ganhar o PDF quando o Proprietario aprova
+  // (ver contratos.service.ts: criar/aprovar/rejeitar).
+  statusAprovacao String    @default("aprovado") // aprovado | pendente_aprovacao | rejeitado
+  motivoRejeicao  String?
+  dataRejeicao    DateTime?
+  dataAprovacao   DateTime?
+  criadoPorId     String?
+  criadoPor       Usuario?  @relation("ContratoCriadoPor", fields: [criadoPorId], references: [id])
+  aprovadoPorId   String?
+  aprovadoPor     Usuario?  @relation("ContratoAprovadoPor", fields: [aprovadoPorId], references: [id])
+
   // Auto-relacao para renovacao: o novo contrato aponta para o anterior.
   contratoAnteriorId String?   @unique
   contratoAnterior   Contrato? @relation("RenovacaoContrato", fields: [contratoAnteriorId], references: [id])
@@ -191,10 +215,40 @@ model Contrato {
 
   pagamentos     Pagamento[]
   caucaoParcelas CaucaoParcela[]
+  aditivos             AditivoContrato[] @relation("AditivoDoContrato")
+  aditivosComoAnterior AditivoContrato[] @relation("AditivoContratoAnterior")
 
   @@index([imovelId])
   @@index([inquilinoId])
   @@index([status])
+  @@index([statusAprovacao])
+}
+
+// Documento anexado a um contrato registrando as mudancas de uma renovacao
+// (ou, fora do fluxo de renovacao, qualquer alteracao contratual pontual).
+// contratoAnteriorId so e preenchido quando o aditivo nasce durante uma
+// renovacao (ver contratos.service.ts: renovar()); fora desse fluxo, o
+// aditivo e anexado direto a um contrato ativo e fica null.
+model AditivoContrato {
+  id         String @id @default(cuid())
+  contratoId String
+  contrato   Contrato @relation("AditivoDoContrato", fields: [contratoId], references: [id])
+
+  contratoAnteriorId String?
+  contratoAnterior   Contrato? @relation("AditivoContratoAnterior", fields: [contratoAnteriorId], references: [id])
+
+  descricaoAlteracoes String
+  arquivoPdfUrl        String
+  dataAditivo          DateTime @default(now())
+  valorAnterior        Float?
+  valorNovo            Float?
+
+  criadoPorId String
+  criadoPor   Usuario @relation(fields: [criadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([contratoId])
 }
 
 // ── Financeiro: caucao parcelada (usada quando Contrato.caucaoNumeroParcelas > 1) ─
@@ -266,11 +320,32 @@ model GastoManutencao {
 
   status            String    @default("orcamento") // orcamento | aprovado | executado | pago
   dataPagamento     DateTime?
+  formaPagamento    String? // pix | transferencia | dinheiro | boleto | outro
   comprovantePdfUrl String?
+  comprovanteNomeOriginal String? // nome do arquivo enviado pelo usuario, para exibir na UI
+  comprovanteTamanho   Int? // bytes, para exibir na UI (ex: "230 KB")
+  comprovanteUploadEm  DateTime?
   observacoes       String?
 
   // Diferencia gasto criado pelo proprietario de chamado aberto pelo inquilino.
   origem String @default("proprietario") // proprietario | chamado_inquilino
+
+  // Soft delete: preenchido = excluido, oculto das listagens padrao (mesmo
+  // padrao do Inquilino). Nao ha "reativar" pedido para este modulo ainda.
+  excluidoEm DateTime?
+
+  // Recorrencia: so tem sentido no registro "origem" (manutencaoOrigemId
+  // null). As instancias geradas automaticamente (ver gerarProximasRecorrencias
+  // em manutencao.service.ts) apontam de volta pra origem via manutencaoOrigemId
+  // e nascem sempre com recorrencia="unica" - nao viram origem de uma nova
+  // cadeia. Cada instancia e editada/excluida de forma independente (nao ha
+  // "aplicar a todas as futuras").
+  recorrencia         String    @default("unica") // unica | mensal | trimestral | semestral | anual
+  dataFimRecorrencia  DateTime?
+  ativo               Boolean   @default(true) // false = recorrencia pausada, para de gerar novas instancias
+  manutencaoOrigemId  String?
+  manutencaoOrigem    GastoManutencao?  @relation("RecorrenciaManutencao", fields: [manutencaoOrigemId], references: [id])
+  manutencoesGeradas  GastoManutencao[] @relation("RecorrenciaManutencao")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -278,6 +353,7 @@ model GastoManutencao {
   @@index([imovelId])
   @@index([status])
   @@index([categoria])
+  @@index([manutencaoOrigemId])
 }
 
 // ── Financeiro: mensalidade do administrador ─────────────────────────────
@@ -339,4 +415,17 @@ model LogAuditoria {
 
   @@index([usuarioId])
   @@index([entidade, entidadeId])
+}
+
+// ── Emails (mock/real, ver email.service.ts) ────────────────────────────
+
+model EmailEnviado {
+  id            String   @id @default(cuid())
+  destinatario  String
+  assunto       String
+  corpo         String
+  modoMock      Boolean  @default(true) // true = apenas logado/gravado, sem SMTP real
+  enviadoEm     DateTime @default(now())
+
+  @@index([enviadoEm])
 }

@@ -103,7 +103,7 @@ export function PagamentosAdminPage() {
         }
       />
 
-      <div className="rounded-lg border bg-background">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
             <TableRow>

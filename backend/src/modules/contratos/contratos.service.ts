@@ -3,9 +3,11 @@ import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarContratoPdf } from "../../services/pdf/contrato.pdf";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
+import { enviarEmail } from "../email/email.service";
 import type { criarContratoSchema, renovarContratoSchema } from "./contratos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import type { Role } from "../../types/rbac";
 
 interface FiltrosContrato {
   status?: string;
@@ -14,6 +16,7 @@ interface FiltrosContrato {
   page?: string;
   pageSize?: string;
   imovelIdsPermitidos?: string[] | null;
+  ativoFiltro?: "ativos" | "todos" | "inativos";
 }
 
 const includePadrao = {
@@ -165,6 +168,13 @@ export async function listar(filtros: FiltrosContrato) {
   const paginacao = parsePaginacao(filtros);
 
   const where: Prisma.ContratoWhereInput = {
+    // Contratos pendentes de aprovacao (ou rejeitados) nunca aparecem na
+    // listagem padrao - so na tela dedicada "Contratos Pendentes".
+    statusAprovacao: "aprovado",
+    // Eixo de visibilidade (nao confundir com o campo "status"): por padrao
+    // so mostra ativo=true; "todos"/"inativos" sao pedidos explicitamente
+    // pelo filtro Ativos/Todos/Inativos da tela.
+    ativo: filtros.ativoFiltro === "todos" ? undefined : filtros.ativoFiltro !== "inativos",
     status: filtros.status,
     imovelId: combinarFiltroImovel(filtros.imovelId, filtros.imovelIdsPermitidos ?? null),
     inquilinoId: filtros.inquilinoId,
@@ -199,7 +209,37 @@ export async function buscarPorIdOuFalhar(id: string) {
   return contrato;
 }
 
-export async function criar(data: z.infer<typeof criarContratoSchema>) {
+// Envio ao Proprietario (best-effort: se o email mockado/SMTP falhar, o
+// contrato ja foi criado e nao deve ser desfeito por isso).
+async function notificarProprietariosContratoPendente(
+  contrato: Prisma.ContratoGetPayload<{ include: typeof includePadrao }>,
+) {
+  try {
+    const proprietarios = await prisma.usuario.findMany({ where: { role: "proprietario", ativo: true } });
+    const corpo = [
+      "Um novo contrato foi cadastrado por um Administrador e aguarda sua aprovação.",
+      "",
+      `Imóvel: ${contrato.imovel.logradouro}, ${contrato.imovel.numero}`,
+      `Inquilino: ${contrato.inquilino.usuario.nome}`,
+      `Valor do aluguel: R$ ${contrato.valorAluguel.toFixed(2)}`,
+      `Período: ${contrato.dataInicio.toLocaleDateString("pt-BR")} a ${contrato.dataFim.toLocaleDateString("pt-BR")}`,
+      "",
+      "Acesse a tela \"Contratos Pendentes\" no sistema para aprovar ou rejeitar.",
+    ].join("\n");
+
+    for (const proprietario of proprietarios) {
+      await enviarEmail({
+        destinatario: proprietario.email,
+        assunto: "[Sistema de Aluguéis] Novo contrato aguardando aprovação",
+        corpo,
+      });
+    }
+  } catch (err) {
+    console.error("Falha ao notificar proprietarios sobre contrato pendente:", err);
+  }
+}
+
+export async function criar(data: z.infer<typeof criarContratoSchema>, criador: { id: string; role: Role }) {
   const imovel = await prisma.imovel.findUnique({ where: { id: data.imovelId } });
   if (!imovel) throw new AppError("Imovel nao encontrado", 400);
   if (imovel.excluidoEm) throw new AppError("Este imovel foi excluido", 409);
@@ -218,6 +258,30 @@ export async function criar(data: z.infer<typeof criarContratoSchema>) {
   if (inquilino.excluidoEm) throw new AppError("Este inquilino foi excluido", 409);
   if (!inquilino.usuario.ativo) throw new AppError("Este inquilino esta inativo", 409);
 
+  // Cadastrado por Administrador: nasce pendente de aprovacao do Proprietario -
+  // sem pagamentos, sem ocupar o imovel e sem PDF ainda (gerados em aprovar()).
+  if (criador.role === "administrador") {
+    const contratoPendente = await prisma.contrato.create({
+      data: {
+        imovelId: data.imovelId,
+        inquilinoId: data.inquilinoId,
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+        diaVencimento: data.diaVencimento,
+        valorAluguel: data.valorAluguel,
+        valorCaucao: data.valorCaucao,
+        caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
+        status: "ativo",
+        statusAprovacao: "pendente_aprovacao",
+        criadoPorId: criador.id,
+      },
+      include: includePadrao,
+    });
+
+    await notificarProprietariosContratoPendente(contratoPendente);
+    return contratoPendente;
+  }
+
   const contratoCriado = await prisma.$transaction(async (tx) => {
     const contrato = await tx.contrato.create({
       data: {
@@ -230,6 +294,9 @@ export async function criar(data: z.infer<typeof criarContratoSchema>) {
         valorCaucao: data.valorCaucao,
         caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
         status: "ativo",
+        statusAprovacao: "aprovado",
+        criadoPorId: criador.id,
+        dataAprovacao: new Date(),
       },
     });
 
@@ -242,6 +309,63 @@ export async function criar(data: z.infer<typeof criarContratoSchema>) {
 
   await gerarEAnexarContratoPdf(contratoCriado.id);
   return prisma.contrato.findUniqueOrThrow({ where: { id: contratoCriado.id }, include: includePadrao });
+}
+
+export async function listarPendentesAprovacao() {
+  return prisma.contrato.findMany({
+    where: { statusAprovacao: "pendente_aprovacao" },
+    include: { ...includePadrao, criadoPor: { select: { nome: true, email: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function aprovar(id: string, aprovadorId: string) {
+  const contrato = await prisma.contrato.findUnique({ where: { id }, include: { imovel: true } });
+  if (!contrato) throw new AppError("Contrato nao encontrado", 404);
+  if (contrato.statusAprovacao !== "pendente_aprovacao") {
+    throw new AppError("Este contrato nao esta pendente de aprovacao", 409);
+  }
+  if (contrato.imovel.status === "alugado") {
+    throw new AppError("Este imovel ja passou a ter outro contrato ativo enquanto este aguardava aprovacao", 409);
+  }
+
+  const dadosPagamento = {
+    dataInicio: contrato.dataInicio,
+    dataFim: contrato.dataFim,
+    diaVencimento: contrato.diaVencimento,
+    valorAluguel: contrato.valorAluguel,
+    valorCaucao: contrato.valorCaucao ?? undefined,
+    caucaoNumeroParcelas: contrato.caucaoNumeroParcelas,
+  };
+
+  const contratoAprovado = await prisma.$transaction(async (tx) => {
+    await gerarPagamentosDoContrato(tx, contrato.id, dadosPagamento);
+    await gerarParcelasCaucao(tx, contrato.id, dadosPagamento);
+    await tx.imovel.update({ where: { id: contrato.imovelId }, data: { status: "alugado" } });
+
+    return tx.contrato.update({
+      where: { id },
+      data: { statusAprovacao: "aprovado", dataAprovacao: new Date(), aprovadoPorId: aprovadorId },
+      include: includePadrao,
+    });
+  });
+
+  await gerarEAnexarContratoPdf(contratoAprovado.id);
+  return prisma.contrato.findUniqueOrThrow({ where: { id }, include: includePadrao });
+}
+
+export async function rejeitar(id: string, motivoRejeicao: string) {
+  const contrato = await prisma.contrato.findUnique({ where: { id } });
+  if (!contrato) throw new AppError("Contrato nao encontrado", 404);
+  if (contrato.statusAprovacao !== "pendente_aprovacao") {
+    throw new AppError("Este contrato nao esta pendente de aprovacao", 409);
+  }
+
+  return prisma.contrato.update({
+    where: { id },
+    data: { statusAprovacao: "rejeitado", motivoRejeicao, dataRejeicao: new Date() },
+    include: includePadrao,
+  });
 }
 
 async function liberarImovelSeSemContratoAtivo(tx: Prisma.TransactionClient, imovelId: string) {
@@ -320,4 +444,50 @@ export async function anexarContratoAssinado(id: string, url: string) {
 export async function removerContratoAssinado(id: string) {
   await buscarPorIdOuFalhar(id);
   return prisma.contrato.update({ where: { id }, data: { contratoAssinadoUrl: null }, include: includePadrao });
+}
+
+// Visibilidade (nao confundir com status="ativo"/"encerrado"/etc): apenas
+// esconde/mostra da listagem padrao, sem tocar no ciclo de vida do contrato.
+export async function desativar(id: string) {
+  await buscarPorIdOuFalhar(id);
+  return prisma.contrato.update({
+    where: { id },
+    data: { ativo: false, desativadoEm: new Date() },
+    include: includePadrao,
+  });
+}
+
+export async function reativar(id: string) {
+  await buscarPorIdOuFalhar(id);
+  return prisma.contrato.update({
+    where: { id },
+    data: { ativo: true, desativadoEm: null },
+    include: includePadrao,
+  });
+}
+
+// Hard delete: so permitido se o contrato nao tiver nenhum historico
+// financeiro (pagamentos ou parcelas de caucao) nem tiver sido renovado -
+// na pratica, isso restringe a contratos pendente_aprovacao/rejeitado, ja
+// que todo contrato aprovado sempre gera pagamentos.
+export async function excluir(id: string) {
+  await buscarPorIdOuFalhar(id);
+
+  const [pagamentos, caucaoParcelas, renovacoesApontando] = await Promise.all([
+    prisma.pagamento.count({ where: { contratoId: id } }),
+    prisma.caucaoParcela.count({ where: { contratoId: id } }),
+    prisma.contrato.count({ where: { contratoAnteriorId: id } }),
+  ]);
+
+  if (pagamentos + caucaoParcelas > 0) {
+    throw new AppError(
+      "Este contrato possui pagamentos ou parcelas de caução vinculados e não pode ser excluído definitivamente. Desative-o em vez disso.",
+      409,
+    );
+  }
+  if (renovacoesApontando > 0) {
+    throw new AppError("Este contrato foi renovado por outro contrato e não pode ser excluído definitivamente.", 409);
+  }
+
+  await prisma.contrato.delete({ where: { id } });
 }

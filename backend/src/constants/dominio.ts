@@ -18,6 +18,16 @@ export const CATEGORIA_MANUTENCAO = [
 ] as const;
 export const STATUS_MANUTENCAO = ["orcamento", "aprovado", "executado", "pago"] as const;
 export const ORIGEM_MANUTENCAO = ["proprietario", "chamado_inquilino"] as const;
+export const RECORRENCIA_MANUTENCAO = ["unica", "mensal", "trimestral", "semestral", "anual"] as const;
+
+// Meses a incrementar por ciclo de recorrencia, usado na geracao automatica
+// de proximas instancias (ver manutencao.service.ts: gerarProximasRecorrencias).
+export const MESES_POR_RECORRENCIA: Record<Exclude<(typeof RECORRENCIA_MANUTENCAO)[number], "unica">, number> = {
+  mensal: 1,
+  trimestral: 3,
+  semestral: 6,
+  anual: 12,
+};
 export const STATUS_PAGAMENTO_ADMIN = ["pago", "pendente", "atrasado"] as const;
 export const FORMA_PAGAMENTO_ADMIN = ["pix", "transferencia", "dinheiro"] as const;
 
@@ -25,6 +35,7 @@ export type StatusImovel = (typeof STATUS_IMOVEL)[number];
 export type StatusContrato = (typeof STATUS_CONTRATO)[number];
 export type StatusPagamento = (typeof STATUS_PAGAMENTO)[number];
 export type StatusManutencao = (typeof STATUS_MANUTENCAO)[number];
+export type RecorrenciaManutencao = (typeof RECORRENCIA_MANUTENCAO)[number];
 
 // Ordem de progressao do workflow de manutencao: nao permite retroceder.
 export const ORDEM_STATUS_MANUTENCAO: Record<StatusManutencao, number> = {

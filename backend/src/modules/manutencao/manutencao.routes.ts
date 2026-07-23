@@ -21,5 +21,20 @@ router.post(
   uploadComprovante.single("comprovante"),
   controller.anexarComprovante,
 );
+router.get("/:id/comprovante", authorizePermissao("podeVerManutencao"), controller.baixarComprovante);
+router.delete("/:id/comprovante", authorizePermissao("podeCadastrarManutencao"), controller.removerComprovante);
+router.delete("/:id", authorizePermissao("podeCadastrarManutencao"), controller.excluir);
+
+router.get("/:id/recorrencias", authorizePermissao("podeVerManutencao"), controller.listarRecorrencias);
+router.patch(
+  "/:id/pausar-recorrencia",
+  authorizePermissao("podeCadastrarManutencao"),
+  controller.pausarRecorrencia,
+);
+router.patch(
+  "/:id/retomar-recorrencia",
+  authorizePermissao("podeCadastrarManutencao"),
+  controller.retomarRecorrencia,
+);
 
 export default router;
