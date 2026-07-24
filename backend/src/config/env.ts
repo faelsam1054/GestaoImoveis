@@ -10,7 +10,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3333),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
-  UPLOADS_DIR: z.string().default("./uploads"),
+  // Supabase Storage: destino de todo upload/PDF gerado (ver src/lib/storage.ts).
+  // SUPABASE_SECRET_KEY e a service role key - acesso total ao bucket,
+  // usada só no backend, nunca exposta ao frontend.
+  SUPABASE_URL: z.string(),
+  SUPABASE_SECRET_KEY: z.string(),
   EMAIL_MOCK: z
     .string()
     .default("true")

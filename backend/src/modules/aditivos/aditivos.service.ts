@@ -1,6 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
-import { removerArquivoFisico } from "../../middlewares/upload.middleware";
+import { removerArquivo } from "../../lib/storage";
 import type { criarAditivoSchema } from "./aditivos.schema";
 import type { z } from "zod";
 
@@ -48,6 +48,6 @@ export async function criar(
 
 export async function excluir(id: string) {
   const aditivo = await buscarPorIdOuFalhar(id);
-  removerArquivoFisico(aditivo.arquivoPdfUrl);
+  await removerArquivo(aditivo.arquivoPdfUrl);
   await prisma.aditivoContrato.delete({ where: { id } });
 }

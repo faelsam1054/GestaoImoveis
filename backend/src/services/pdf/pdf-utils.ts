@@ -1,29 +1,21 @@
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
 import type PDFDocument from "pdfkit";
-import { env } from "../../config/env";
-import { montarUrlArquivo } from "../../middlewares/upload.middleware";
+import { enviarArquivo, type ArquivoEnviado } from "../../lib/storage";
 
-export interface ArquivoSalvo {
-  filename: string;
-  url: string;
-}
+export type ArquivoSalvo = ArquivoEnviado;
 
-// Escreve o PDFDocument em disco (uploads/<subpasta>/<uuid>.pdf) e devolve a
-// URL publica no mesmo formato usado pelos uploads via multer (/uploads/<subpasta>/...).
+// Coleta o PDFDocument inteiro em memoria (sem tocar disco - necessario em
+// serverless) e envia pro Supabase Storage, devolvendo a URL publica no
+// mesmo formato usado pelos uploads via multer.
 export function salvarPdf(subpasta: string, doc: PDFKit.PDFDocument): Promise<ArquivoSalvo> {
-  const destino = path.join(env.UPLOADS_DIR, subpasta);
-  fs.mkdirSync(destino, { recursive: true });
-  const filename = `${crypto.randomUUID()}.pdf`;
-  const caminhoAbsoluto = path.join(destino, filename);
-
   return new Promise((resolve, reject) => {
-    const stream = fs.createWriteStream(caminhoAbsoluto);
-    doc.pipe(stream);
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => {
+      const buffer = Buffer.concat(chunks);
+      enviarArquivo(subpasta, buffer, "documento.pdf", "application/pdf").then(resolve, reject);
+    });
+    doc.on("error", reject);
     doc.end();
-    stream.on("finish", () => resolve({ filename, url: montarUrlArquivo(subpasta, filename) }));
-    stream.on("error", reject);
   });
 }
 

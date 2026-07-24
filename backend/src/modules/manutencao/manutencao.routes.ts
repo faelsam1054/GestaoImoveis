@@ -4,7 +4,7 @@ import { authenticate } from "../../middlewares/auth.middleware";
 import { authorizePermissao } from "../../middlewares/rbac.middleware";
 import { criarUploadMiddleware } from "../../middlewares/upload.middleware";
 
-const uploadComprovante = criarUploadMiddleware("manutencao");
+const uploadComprovante = criarUploadMiddleware();
 
 const router = Router();
 

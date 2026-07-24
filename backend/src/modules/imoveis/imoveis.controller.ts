@@ -4,7 +4,7 @@ import { AppError } from "../../utils/AppError";
 import * as service from "./imoveis.service";
 import { criarImovelSchema, atualizarImovelSchema, listarImoveisQuerySchema } from "./imoveis.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { montarUrlArquivo } from "../../middlewares/upload.middleware";
+import { enviarArquivo } from "../../lib/storage";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
 import type { Request } from "express";
 
@@ -112,7 +112,7 @@ export const desativar = asyncHandler(async (req, res) => {
 export const adicionarFoto = asyncHandler(async (req, res) => {
   await garantirAcesso(req, paramId(req));
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
-  const url = montarUrlArquivo("imoveis", req.file.filename);
+  const { url } = await enviarArquivo("imoveis", req.file.buffer, req.file.originalname, req.file.mimetype);
   const foto = await service.adicionarFoto(paramId(req), url);
   res.status(201).json(foto);
 });

@@ -1,7 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
-import { removerArquivoFisico } from "../../middlewares/upload.middleware";
+import { removerArquivo } from "../../lib/storage";
 import { ORDEM_STATUS_MANUTENCAO, MESES_POR_RECORRENCIA, type StatusManutencao } from "../../constants/dominio";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import type {
@@ -176,7 +176,7 @@ export async function atualizarStatus(id: string, data: z.infer<typeof atualizar
 
 export async function anexarComprovante(id: string, url: string, nomeOriginal: string, tamanho: number) {
   const antes = await buscarPorIdOuFalhar(id);
-  removerArquivoFisico(antes.comprovantePdfUrl);
+  await removerArquivo(antes.comprovantePdfUrl);
   return prisma.gastoManutencao.update({
     where: { id },
     data: {
@@ -191,7 +191,7 @@ export async function anexarComprovante(id: string, url: string, nomeOriginal: s
 
 export async function removerComprovante(id: string) {
   const antes = await buscarPorIdOuFalhar(id);
-  removerArquivoFisico(antes.comprovantePdfUrl);
+  await removerArquivo(antes.comprovantePdfUrl);
   return prisma.gastoManutencao.update({
     where: { id },
     data: {
@@ -206,12 +206,12 @@ export async function removerComprovante(id: string) {
 
 // Soft delete (mesmo padrao do Inquilino): preserva o registro financeiro,
 // so oculta da listagem padrao. O arquivo de comprovante, porem, e removido
-// do disco de verdade - nao ha motivo pra manter o PDF orfao.
+// do Storage de verdade - nao ha motivo pra manter o PDF orfao.
 export async function excluir(id: string) {
   const gasto = await buscarPorIdOuFalhar(id);
   if (gasto.excluidoEm) throw new AppError("Este gasto de manutencao ja esta excluido", 409);
 
-  removerArquivoFisico(gasto.comprovantePdfUrl);
+  await removerArquivo(gasto.comprovantePdfUrl);
   await prisma.gastoManutencao.update({ where: { id }, data: { excluidoEm: new Date() } });
 }
 

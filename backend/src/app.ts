@@ -1,4 +1,3 @@
-import path from "node:path";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -11,6 +10,12 @@ import { errorMiddleware } from "./middlewares/error.middleware";
 import { AppError } from "./utils/AppError";
 
 export const app = express();
+
+// A Vercel (e qualquer PaaS serverless) roda a app atras de 1 proxy reverso -
+// sem isso, express-rate-limit nao confia no X-Forwarded-For e loga erro de
+// validacao a cada requisicao, alem do IP de auditoria (getClientIp) ficar
+// incorreto. "1" = confia exatamente 1 hop de proxy (o da propria Vercel).
+app.set("trust proxy", 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors(corsOptions));
@@ -25,9 +30,9 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Arquivos enviados (fotos de imoveis, comprovantes de manutencao/mensalidade).
-app.use("/uploads", express.static(path.resolve(env.UPLOADS_DIR)));
-
+// Arquivos enviados (fotos de imoveis, comprovantes, PDFs gerados) vivem no
+// Supabase Storage agora (ver src/lib/storage.ts), nao mais servidos daqui -
+// o filesystem local e efemero em ambiente serverless.
 app.use("/api", routes);
 
 app.use((req, res, next) => {

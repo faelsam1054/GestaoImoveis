@@ -8,6 +8,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "postinstall": "prisma generate && ts-node prisma/bootstrap.ts",
+    "bootstrap": "ts-node prisma/bootstrap.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -34,6 +36,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.17.0",
+    "@supabase/supabase-js": "^2.110.8",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

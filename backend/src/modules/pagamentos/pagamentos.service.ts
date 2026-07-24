@@ -2,7 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarReciboPdf } from "../../services/pdf/recibo.pdf";
-import { removerArquivoFisico } from "../../middlewares/upload.middleware";
+import { removerArquivo } from "../../lib/storage";
 import type {
   criarPagamentoAvulsoSchema,
   atualizarPagamentoSchema,
@@ -168,7 +168,7 @@ export async function desfazerPagamento(id: string, data: z.infer<typeof desfaze
   }
 
   if (data.removerRecibo && pagamento.recibo) {
-    removerArquivoFisico(pagamento.recibo.caminhoArquivo);
+    await removerArquivo(pagamento.recibo.caminhoArquivo);
     await prisma.reciboPdf.delete({ where: { id: pagamento.recibo.id } });
   }
 

@@ -1,15 +1,23 @@
 // Schema do sistema de gestao de alugueis
-// SQLite nao suporta enums nativos no Prisma: campos de "opcoes fixas"
-// sao String, validados via Zod na camada de aplicacao (Fase 2/3).
-// Valores permitidos ficam documentados em comentario ao lado do campo.
+// Campos de "opcoes fixas" sao String (nao enum nativo do Postgres) por
+// heranca do datasource original (SQLite, que nao suporta enum) - validados
+// via Zod na camada de aplicacao. Valores permitidos ficam documentados em
+// comentario ao lado do campo. Mantido como String deliberadamente na
+// migracao para Postgres (converter pra enum nativo e uma melhoria separada,
+// nao uma correcao obrigatoria - ver README, secao de deploy).
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" gera o engine para a maquina local (Windows, dev); a Vercel
+  // roda em Amazon Linux (Node runtime serverless) - sem esse segundo
+  // target o client funciona local mas quebra em runtime na Vercel.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // conexao via pooler (Supavisor/pgbouncer) - usada em runtime
+  directUrl = env("DIRECT_URL")   // conexao direta - usada so pelo `prisma migrate`
 }
 
 // ── Usuarios e autenticacao ─────────────────────────────────────────────
@@ -412,7 +420,10 @@ model LogAuditoria {
   entidade   String // ex: Imovel, Pagamento, Contrato
   entidadeId String?
 
-  // JSON serializado manualmente (SQLite nao suporta o tipo Json no Prisma).
+  // JSON serializado manualmente como String (heranca do datasource original,
+  // SQLite, que nao suporta o tipo Json no Prisma). Postgres suporta Json
+  // nativo, mas mantido como String deliberadamente por ora - ver comentario
+  // no topo do arquivo.
   dadosAntes  String?
   dadosDepois String?
 

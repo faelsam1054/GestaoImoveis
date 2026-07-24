@@ -9,7 +9,7 @@ import {
   rejeitarContratoSchema,
 } from "./contratos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { montarUrlArquivo } from "../../middlewares/upload.middleware";
+import { enviarArquivo } from "../../lib/storage";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
 import * as aditivosService from "../aditivos/aditivos.service";
 import { criarAditivoSchema } from "../aditivos/aditivos.schema";
@@ -114,7 +114,7 @@ export const anexarContratoAssinado = asyncHandler(async (req, res) => {
   const existente = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, existente.imovelId);
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
-  const url = montarUrlArquivo("contratos", req.file.filename);
+  const { url } = await enviarArquivo("contratos", req.file.buffer, req.file.originalname, req.file.mimetype);
   const contrato = await service.anexarContratoAssinado(paramId(req), url);
   await registrarAuditoria({
     usuarioId: req.user!.id,
@@ -160,7 +160,7 @@ export const criarAditivo = asyncHandler(async (req, res) => {
   await garantirAcesso(req, existente.imovelId);
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
   const data = criarAditivoSchema.parse(req.body);
-  const url = montarUrlArquivo("aditivos", req.file.filename);
+  const { url } = await enviarArquivo("aditivos", req.file.buffer, req.file.originalname, req.file.mimetype);
   const aditivo = await aditivosService.criar(paramId(req), data, url, req.user!.id);
   await registrarAuditoria({
     usuarioId: req.user!.id,

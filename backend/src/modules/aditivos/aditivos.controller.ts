@@ -3,7 +3,7 @@ import { paramId } from "../../utils/params";
 import { AppError } from "../../utils/AppError";
 import * as service from "./aditivos.service";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { caminhoFisico } from "../../middlewares/upload.middleware";
+import { baixarArquivo } from "../../lib/storage";
 import { verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
 
 export const download = asyncHandler(async (req, res) => {
@@ -11,7 +11,10 @@ export const download = asyncHandler(async (req, res) => {
   const permitido = await verificarAcessoAoImovel(req.user!.id, req.user!.role, aditivo.contrato.imovelId);
   if (!permitido) throw new AppError("Voce nao tem acesso a este aditivo", 403);
 
-  res.download(caminhoFisico(aditivo.arquivoPdfUrl));
+  const { buffer, contentType } = await baixarArquivo(aditivo.arquivoPdfUrl);
+  res.setHeader("Content-Type", contentType ?? "application/pdf");
+  res.setHeader("Content-Disposition", 'attachment; filename="aditivo.pdf"');
+  res.send(buffer);
 });
 
 export const excluir = asyncHandler(async (req, res) => {

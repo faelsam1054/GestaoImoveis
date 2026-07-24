@@ -20,14 +20,13 @@ export interface GastoManutencaoInput {
   prestadorTelefone?: string;
   observacoes?: string;
   recorrencia?: RecorrenciaManutencao;
-  dataFimRecorrencia?: string;
+  dataFimRecorrencia?: string | null;
 }
 
 export interface AtualizarGastoManutencaoInput extends Partial<GastoManutencaoInput> {
   status?: StatusManutencao;
   dataPagamento?: string | null;
   formaPagamento?: FormaPagamento | null;
-  dataFimRecorrencia?: string | null;
 }
 
 export interface FiltrosManutencao {

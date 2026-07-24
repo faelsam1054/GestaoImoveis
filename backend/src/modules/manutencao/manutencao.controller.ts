@@ -9,9 +9,8 @@ import {
   listarManutencaoQuerySchema,
 } from "./manutencao.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { montarUrlArquivo, caminhoFisico } from "../../middlewares/upload.middleware";
+import { enviarArquivo, baixarArquivo } from "../../lib/storage";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
-import fs from "node:fs";
 import type { Request } from "express";
 
 async function garantirAcesso(req: Request, imovelId: string) {
@@ -88,7 +87,7 @@ export const anexarComprovante = asyncHandler(async (req, res) => {
   const antes = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, antes.imovelId);
   if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
-  const url = montarUrlArquivo("manutencao", req.file.filename);
+  const { url } = await enviarArquivo("manutencao", req.file.buffer, req.file.originalname, req.file.mimetype);
   const gasto = await service.anexarComprovante(paramId(req), url, req.file.originalname, req.file.size);
   await registrarAuditoria({
     usuarioId: req.user!.id,
@@ -107,11 +106,11 @@ export const baixarComprovante = asyncHandler(async (req, res) => {
   await garantirAcesso(req, gasto.imovelId);
   if (!gasto.comprovantePdfUrl) throw new AppError("Este gasto de manutencao nao possui comprovante anexado", 404);
 
-  const caminho = caminhoFisico(gasto.comprovantePdfUrl);
-  if (!fs.existsSync(caminho)) {
-    throw new AppError("O arquivo do comprovante nao foi encontrado no servidor", 404);
-  }
-  res.download(caminho, gasto.comprovanteNomeOriginal ?? "comprovante.pdf");
+  const { buffer, contentType } = await baixarArquivo(gasto.comprovantePdfUrl);
+  const nomeArquivo = gasto.comprovanteNomeOriginal ?? "comprovante.pdf";
+  res.setHeader("Content-Type", contentType ?? "application/octet-stream");
+  res.setHeader("Content-Disposition", `attachment; filename="${nomeArquivo}"`);
+  res.send(buffer);
 });
 
 export const removerComprovante = asyncHandler(async (req, res) => {

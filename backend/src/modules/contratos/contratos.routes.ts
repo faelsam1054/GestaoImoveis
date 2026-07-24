@@ -7,8 +7,8 @@ import { criarUploadMiddleware } from "../../middlewares/upload.middleware";
 
 // 10MB (maior que o padrao de 5MB): PDFs de contrato assinado/escaneado
 // tendem a ser maiores que os outros anexos do sistema.
-const uploadContratoAssinado = criarUploadMiddleware("contratos", new Set(["application/pdf"]), 10 * 1024 * 1024);
-const uploadAditivo = criarUploadMiddleware("aditivos", new Set(["application/pdf"]), 10 * 1024 * 1024);
+const uploadContratoAssinado = criarUploadMiddleware(new Set(["application/pdf"]), 10 * 1024 * 1024);
+const uploadAditivo = criarUploadMiddleware(new Set(["application/pdf"]), 10 * 1024 * 1024);
 
 const router = Router();
 

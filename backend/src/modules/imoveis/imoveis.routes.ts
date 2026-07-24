@@ -4,7 +4,7 @@ import { authenticate } from "../../middlewares/auth.middleware";
 import { authorizePermissao, requireRole } from "../../middlewares/rbac.middleware";
 import { criarUploadMiddleware } from "../../middlewares/upload.middleware";
 
-const uploadFoto = criarUploadMiddleware("imoveis");
+const uploadFoto = criarUploadMiddleware();
 
 const router = Router();
 

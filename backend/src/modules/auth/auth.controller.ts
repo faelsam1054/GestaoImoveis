@@ -11,10 +11,18 @@ const REFRESH_COOKIE = "refreshToken";
 const REFRESH_COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function setRefreshCookie(res: Response, token: string) {
+  // Frontend e backend sao dominios diferentes em producao (dois projetos
+  // Vercel: *.vercel.app e um "site" publico distinto por subdominio, ver
+  // Public Suffix List) - isso e cross-site de verdade, nao so cross-origin.
+  // Cookie com SameSite=Lax nunca e enviado (nem persistido, na pratica) em
+  // requisicoes cross-site, entao o refresh sempre falhava em producao. Em
+  // dev local, front/back sao o mesmo site (localhost, via proxy do Vite),
+  // entao Lax continua correto e mais seguro la.
+  const producao = env.NODE_ENV === "production";
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
-    secure: env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: producao,
+    sameSite: producao ? "none" : "lax",
     path: "/api/auth",
     maxAge: REFRESH_COOKIE_MAX_AGE_MS,
   });
@@ -43,7 +51,8 @@ export const logout = asyncHandler(async (req, res) => {
   const tokenRecebido = req.cookies?.[REFRESH_COOKIE];
   const ip = getClientIp(req);
   await authService.logout(tokenRecebido, req.user?.id, ip);
-  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth" });
+  const producao = env.NODE_ENV === "production";
+  res.clearCookie(REFRESH_COOKIE, { path: "/api/auth", secure: producao, sameSite: producao ? "none" : "lax" });
   res.status(204).send();
 });
 

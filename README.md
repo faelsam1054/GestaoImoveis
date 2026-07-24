@@ -51,15 +51,27 @@ local. Antes de qualquer uso além de testes locais, troque `JWT_SECRET` e
 
 ## Banco de dados
 
+PostgreSQL (Supabase). Localmente:
+
 ```bash
-# cria o banco SQLite e aplica as migrations
+# aplica as migrations no Postgres apontado por DATABASE_URL/DIRECT_URL
 npm run db:migrate
 
-# popular o banco com dados de demonstração (ver credenciais abaixo)
+# popular o banco com dados de demonstração (dev local - NUNCA rodar em produção; ver credenciais abaixo)
 npm run db:seed
 ```
 
 `db:seed` é idempotente — pode ser executado novamente sem duplicar registros.
+
+**Bootstrap do Proprietário padrão em produção** (`prisma/bootstrap.ts`,
+chamado automaticamente no `postinstall` a cada deploy): diferente do
+`db:seed` (dados de demonstração, só para dev local), o bootstrap é o único
+dado criado automaticamente em produção — exatamente **um usuário
+Proprietário**, e só se o banco ainda não tiver nenhum. As credenciais vêm
+das variáveis de ambiente `PROPRIETARIO_PADRAO_EMAIL`/`PROPRIETARIO_PADRAO_SENHA`
+(configuradas no dashboard da Vercel, nunca commitadas); a conta nasce com
+`precisaTrocarSenha=true`, forçando a troca da senha já no primeiro login.
+**Troque a senha padrão imediatamente após o primeiro acesso em produção.**
 
 **Migration `contrato_status_unificado`**: fundiu os antigos campos
 `Contrato.statusAprovacao` (aprovado/pendente_aprovacao/rejeitado) e
