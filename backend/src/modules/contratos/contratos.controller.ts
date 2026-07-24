@@ -93,20 +93,6 @@ export const encerrar = asyncHandler(async (req, res) => {
   res.json(contrato);
 });
 
-export const rescindir = asyncHandler(async (req, res) => {
-  const existente = await service.buscarPorIdOuFalhar(paramId(req));
-  await garantirAcesso(req, existente.imovelId);
-  const contrato = await service.rescindir(paramId(req));
-  await registrarAuditoria({
-    usuarioId: req.user!.id,
-    acao: "RESCINDIR_CONTRATO",
-    entidade: "Contrato",
-    entidadeId: contrato.id,
-    ip: getClientIp(req),
-  });
-  res.json(contrato);
-});
-
 export const renovar = asyncHandler(async (req, res) => {
   const existente = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, existente.imovelId);
@@ -148,34 +134,6 @@ export const removerContratoAssinado = asyncHandler(async (req, res) => {
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "REMOVER_CONTRATO_ASSINADO",
-    entidade: "Contrato",
-    entidadeId: contrato.id,
-    ip: getClientIp(req),
-  });
-  res.json(contrato);
-});
-
-export const desativar = asyncHandler(async (req, res) => {
-  const existente = await service.buscarPorIdOuFalhar(paramId(req));
-  await garantirAcesso(req, existente.imovelId);
-  const contrato = await service.desativar(paramId(req));
-  await registrarAuditoria({
-    usuarioId: req.user!.id,
-    acao: "DESATIVAR_CONTRATO",
-    entidade: "Contrato",
-    entidadeId: contrato.id,
-    ip: getClientIp(req),
-  });
-  res.json(contrato);
-});
-
-export const reativar = asyncHandler(async (req, res) => {
-  const existente = await service.buscarPorIdOuFalhar(paramId(req));
-  await garantirAcesso(req, existente.imovelId);
-  const contrato = await service.reativar(paramId(req));
-  await registrarAuditoria({
-    usuarioId: req.user!.id,
-    acao: "REATIVAR_CONTRATO",
     entidade: "Contrato",
     entidadeId: contrato.id,
     ip: getClientIp(req),

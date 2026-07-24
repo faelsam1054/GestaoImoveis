@@ -45,7 +45,7 @@ async function obterInquilinoOuFalhar(usuarioId: string) {
 async function obterContratoAtivoOuFalhar(usuarioId: string) {
   const inquilino = await obterInquilinoOuFalhar(usuarioId);
   const contrato = await prisma.contrato.findFirst({
-    where: { inquilinoId: inquilino.id, status: "ativo", statusAprovacao: "aprovado" },
+    where: { inquilinoId: inquilino.id, status: "ativo" },
     include: { imovel: { include: { tipoImovel: true } } },
     orderBy: { createdAt: "desc" },
   });

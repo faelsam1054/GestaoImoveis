@@ -1,16 +1,13 @@
-import { useRef, useState, type ChangeEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, ChevronDown, ChevronRight, Paperclip } from "lucide-react";
 import {
   listarContratos,
   criarContrato,
   encerrarContrato,
-  rescindirContrato,
   renovarContrato,
-  desativarContrato,
-  reativarContrato,
   excluirContrato,
   enviarContratoAssinado,
   type ContratoInput,
@@ -20,7 +17,7 @@ import { criarAditivo } from "@/api/aditivos";
 import { listarImoveis } from "@/api/imoveis";
 import { listarInquilinos } from "@/api/inquilinos";
 import { useAuth } from "@/contexts/AuthContext";
-import { STATUS_CONTRATO, type Contrato } from "@/types/domain";
+import type { Contrato } from "@/types/domain";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { calcularParcelasCaucaoPreview } from "@/lib/caucao";
 import { mensagemErro } from "@/lib/api-client";
@@ -37,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -123,29 +121,23 @@ function PreviewParcelasCaucao({
   );
 }
 
-// Um contrato tem 3 eixos independentes (status de ciclo de vida, aprovacao
-// e visibilidade); a coluna "Status" da listagem precisa combinar os 3 numa
-// unica badge, com a visibilidade (inativo) tendo prioridade sobre o resto.
-function statusExibicaoContrato(contrato: Contrato): string {
-  if (!contrato.ativo) return "inativo";
-  if (contrato.statusAprovacao === "pendente_aprovacao") return "pendente_aprovacao";
-  if (contrato.statusAprovacao === "rejeitado") return "rejeitado";
-  return contrato.status;
-}
+// Listagem geral so mostra contratos ativo/encerrado - pendente_aprovacao e
+// rejeitado ficam exclusivamente na tela "Contratos Pendentes".
+type AbaContrato = "todos" | "ativo" | "encerrado";
 
 export function ContratosPage() {
   const { usuario } = useAuth();
   const podeEditar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeEditarContratos;
   const queryClient = useQueryClient();
 
-  const [statusFiltro, setStatusFiltro] = useState<string>("todos");
-  const [ativoFiltro, setAtivoFiltro] = useState<"ativos" | "todos" | "inativos">("ativos");
+  const [aba, setAba] = useState<AbaContrato>("todos");
   const [excluindo, setExcluindo] = useState<Contrato | null>(null);
   const [dialogAberto, setDialogAberto] = useState(false);
   const [form, setForm] = useState<ContratoInput>(FORM_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
   const [arquivoContrato, setArquivoContrato] = useState<File | null>(null);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const [mostrarUploadPdf, setMostrarUploadPdf] = useState(false);
   const inputArquivoContratoRef = useRef<HTMLInputElement>(null);
 
   const [contratoRenovando, setContratoRenovando] = useState<Contrato | null>(null);
@@ -166,15 +158,13 @@ export function ContratosPage() {
   const [arquivoAditivoRenovacao, setArquivoAditivoRenovacao] = useState<File | null>(null);
   const inputAditivoRenovacaoRef = useRef<HTMLInputElement>(null);
 
-  const [confirmacao, setConfirmacao] = useState<{ contrato: Contrato; acao: "encerrar" | "rescindir" } | null>(null);
+  const [confirmacao, setConfirmacao] = useState<Contrato | null>(null);
 
+  // Busca unica (sem filtro de status no servidor) - o backend ja restringe a
+  // ativo/encerrado, entao as 3 abas sao só um filtro local, sem refetch.
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["contratos", statusFiltro, ativoFiltro],
-    queryFn: () =>
-      listarContratos({
-        status: statusFiltro === "todos" ? undefined : (statusFiltro as Contrato["status"]),
-        ativoFiltro,
-      }),
+    queryKey: ["contratos"],
+    queryFn: () => listarContratos(),
   });
 
   const { data: imoveisVagos } = useQuery({
@@ -196,7 +186,7 @@ export function ContratosPage() {
   const mutCriar = useMutation({
     mutationFn: (input: ContratoInput) => criarContrato(input),
     onSuccess: async (contrato) => {
-      if (contrato.statusAprovacao === "pendente_aprovacao") {
+      if (contrato.status === "pendente_aprovacao") {
         toast.success("Contrato enviado para aprovação do Proprietário.");
       } else {
         toast.success("Contrato criado. Pagamentos gerados automaticamente.");
@@ -229,17 +219,6 @@ export function ContratosPage() {
     onError: (err) => toast.error(mensagemErro(err)),
   });
 
-  const mutRescindir = useMutation({
-    mutationFn: (id: string) => rescindirContrato(id),
-    onSuccess: async () => {
-      toast.success("Contrato rescindido.");
-      await invalidar();
-      await queryClient.invalidateQueries({ queryKey: ["imoveis"] });
-      setConfirmacao(null);
-    },
-    onError: (err) => toast.error(mensagemErro(err)),
-  });
-
   const mutRenovar = useMutation({
     mutationFn: ({ id, input }: { id: string; input: RenovarContratoInput }) => renovarContrato(id, input),
     onSuccess: async (novoContrato, variables) => {
@@ -264,24 +243,6 @@ export function ContratosPage() {
     onError: (err) => setErro(mensagemErro(err)),
   });
 
-  const mutDesativar = useMutation({
-    mutationFn: (id: string) => desativarContrato(id),
-    onSuccess: async () => {
-      toast.success("Contrato desativado.");
-      await invalidar();
-    },
-    onError: (err) => toast.error(mensagemErro(err)),
-  });
-
-  const mutReativar = useMutation({
-    mutationFn: (id: string) => reativarContrato(id),
-    onSuccess: async () => {
-      toast.success("Contrato reativado.");
-      await invalidar();
-    },
-    onError: (err) => toast.error(mensagemErro(err)),
-  });
-
   const mutExcluir = useMutation({
     mutationFn: (id: string) => excluirContrato(id),
     onSuccess: async () => {
@@ -300,6 +261,7 @@ export function ContratosPage() {
     setErro(null);
     setArquivoContrato(null);
     setErroArquivo(null);
+    setMostrarUploadPdf(false);
     setDialogAberto(true);
   }
 
@@ -344,7 +306,16 @@ export function ContratosPage() {
   }
 
   const salvando = mutCriar.isPending;
-  const contratos = resultado?.dados ?? [];
+  const contratosTodos = resultado?.dados ?? [];
+  const contagens = useMemo(
+    () => ({
+      todos: contratosTodos.length,
+      ativo: contratosTodos.filter((c) => c.status === "ativo").length,
+      encerrado: contratosTodos.filter((c) => c.status === "encerrado").length,
+    }),
+    [contratosTodos],
+  );
+  const contratos = aba === "todos" ? contratosTodos : contratosTodos.filter((c) => c.status === aba);
 
   return (
     <div>
@@ -361,35 +332,13 @@ export function ContratosPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="w-full max-w-xs">
-          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-            <SelectTrigger>
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos os status</SelectItem>
-              {STATUS_CONTRATO.map((s) => (
-                <SelectItem key={s} value={s} className="capitalize">
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="w-full max-w-xs">
-          <Select value={ativoFiltro} onValueChange={(v) => setAtivoFiltro(v as typeof ativoFiltro)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ativos">Mostrar apenas ativos</SelectItem>
-              <SelectItem value="todos">Mostrar todos</SelectItem>
-              <SelectItem value="inativos">Mostrar apenas inativos</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <Tabs value={aba} onValueChange={(v) => setAba(v as AbaContrato)} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="todos">Todos ({contagens.todos})</TabsTrigger>
+          <TabsTrigger value="ativo">Ativo ({contagens.ativo})</TabsTrigger>
+          <TabsTrigger value="encerrado">Encerrado ({contagens.encerrado})</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {isLoading && (
         <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
@@ -431,7 +380,7 @@ export function ContratosPage() {
                     </TableCell>
                     <TableCell>{formatarMoeda(contrato.valorAluguel)}</TableCell>
                     <TableCell>
-                      <StatusBadge status={statusExibicaoContrato(contrato)} />
+                      <StatusBadge status={contrato.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" asChild>
@@ -442,53 +391,15 @@ export function ContratosPage() {
                           <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
                             Renovar
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setConfirmacao({ contrato, acao: "encerrar" })}
-                          >
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmacao(contrato)}>
                             Encerrar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive"
-                            onClick={() => setConfirmacao({ contrato, acao: "rescindir" })}
-                          >
-                            Rescindir
                           </Button>
                         </>
                       )}
                       {podeEditar && (
-                        <>
-                          {contrato.ativo ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-amber-600 dark:text-amber-400"
-                              onClick={() => mutDesativar.mutate(contrato.id)}
-                            >
-                              Desativar
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-success"
-                              onClick={() => mutReativar.mutate(contrato.id)}
-                            >
-                              Ativar
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive"
-                            onClick={() => setExcluindo(contrato)}
-                          >
-                            Excluir
-                          </Button>
-                        </>
+                        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setExcluindo(contrato)}>
+                          Excluir
+                        </Button>
                       )}
                     </TableCell>
                   </TableRow>
@@ -508,7 +419,7 @@ export function ContratosPage() {
                     </p>
                     <p className="truncate text-xs text-muted-foreground">{contrato.inquilino?.usuario?.nome}</p>
                   </div>
-                  <StatusBadge status={statusExibicaoContrato(contrato)} />
+                  <StatusBadge status={contrato.status} />
                 </MobileRowCardHeader>
                 <MobileRowField
                   label="Período"
@@ -524,53 +435,15 @@ export function ContratosPage() {
                       <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
                         Renovar
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setConfirmacao({ contrato, acao: "encerrar" })}
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => setConfirmacao(contrato)}>
                         Encerrar
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => setConfirmacao({ contrato, acao: "rescindir" })}
-                      >
-                        Rescindir
                       </Button>
                     </>
                   )}
                   {podeEditar && (
-                    <>
-                      {contrato.ativo ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-amber-600 dark:text-amber-400"
-                          onClick={() => mutDesativar.mutate(contrato.id)}
-                        >
-                          Desativar
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-success"
-                          onClick={() => mutReativar.mutate(contrato.id)}
-                        >
-                          Ativar
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => setExcluindo(contrato)}
-                      >
-                        Excluir
-                      </Button>
-                    </>
+                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setExcluindo(contrato)}>
+                      Excluir
+                    </Button>
                   )}
                 </MobileRowActions>
               </MobileRowCard>
@@ -581,53 +454,55 @@ export function ContratosPage() {
 
       {/* Novo contrato */}
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] w-full max-w-lg flex-col gap-0 overflow-hidden p-0">
+          <DialogHeader className="gap-1 border-b p-4">
             <DialogTitle>Novo Contrato</DialogTitle>
             <DialogDescription>
               Os pagamentos de aluguel (e caução, se informada) são gerados automaticamente para todo o período.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 overflow-y-auto p-4">
             {usuario?.role === "administrador" && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                 Este contrato precisará de aprovação do Proprietário antes de ser ativado.
               </div>
             )}
-            <div className="flex flex-col gap-2">
-              <Label>Imóvel (somente vagos)</Label>
-              <Select value={form.imovelId} onValueChange={(v) => setForm({ ...form, imovelId: v })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o imóvel" />
-                </SelectTrigger>
-                <SelectContent>
-                  {imoveisVagos?.dados.map((imovel) => (
-                    <SelectItem key={imovel.id} value={imovel.id}>
-                      {imovel.logradouro}, {imovel.numero} - {imovel.bairro}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Inquilino</Label>
-              <Select value={form.inquilinoId} onValueChange={(v) => setForm({ ...form, inquilinoId: v })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o inquilino" />
-                </SelectTrigger>
-                <SelectContent>
-                  {inquilinosResultado?.dados
-                    .filter((inquilino) => inquilino.usuario?.ativo)
-                    .map((inquilino) => (
-                      <SelectItem key={inquilino.id} value={inquilino.id}>
-                        {inquilino.usuario?.nome}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Imóvel (somente vagos)</Label>
+                <Select value={form.imovelId} onValueChange={(v) => setForm({ ...form, imovelId: v })}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {imoveisVagos?.dados.map((imovel) => (
+                      <SelectItem key={imovel.id} value={imovel.id}>
+                        {imovel.logradouro}, {imovel.numero} - {imovel.bairro}
                       </SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Inquilino</Label>
+                <Select value={form.inquilinoId} onValueChange={(v) => setForm({ ...form, inquilinoId: v })}>
+                  <SelectTrigger size="sm" className="w-full">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {inquilinosResultado?.dados
+                      .filter((inquilino) => inquilino.usuario?.ativo)
+                      .map((inquilino) => (
+                        <SelectItem key={inquilino.id} value={inquilino.id}>
+                          {inquilino.usuario?.nome}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="dataInicio">Data de início</Label>
                 <Input
                   id="dataInicio"
@@ -636,7 +511,7 @@ export function ContratosPage() {
                   onChange={(e) => setForm({ ...form, dataInicio: e.target.value })}
                 />
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="dataFim">Data de fim</Label>
                 <Input
                   id="dataFim"
@@ -646,8 +521,8 @@ export function ContratosPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="diaVencimento">Dia de vencimento</Label>
                 <Input
                   id="diaVencimento"
@@ -658,7 +533,7 @@ export function ContratosPage() {
                   onChange={(e) => setForm({ ...form, diaVencimento: Number(e.target.value) })}
                 />
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="valorAluguel">Valor do aluguel</Label>
                 <CurrencyInput
                   id="valorAluguel"
@@ -666,17 +541,17 @@ export function ContratosPage() {
                   onValueChange={(v) => setForm({ ...form, valorAluguel: v ?? 0 })}
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="valorCaucao">Caução (opcional)</Label>
-                <CurrencyInput
-                  id="valorCaucao"
-                  value={form.valorCaucao}
-                  onValueChange={(v) => setForm({ ...form, valorCaucao: v })}
-                />
-              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="valorCaucao">Caução (opcional)</Label>
+              <CurrencyInput
+                id="valorCaucao"
+                value={form.valorCaucao}
+                onValueChange={(v) => setForm({ ...form, valorCaucao: v })}
+              />
             </div>
             {Boolean(form.valorCaucao) && (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1.5">
                 <Label>Parcelar caução em</Label>
                 <SeletorParcelasCaucao
                   valor={form.caucaoNumeroParcelas}
@@ -689,29 +564,58 @@ export function ContratosPage() {
                 />
               </div>
             )}
-            <div className="flex flex-col gap-2">
-              <Label>Anexar PDF do Contrato</Label>
-              <input
-                ref={inputArquivoContratoRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={selecionarArquivoContrato}
-              />
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => inputArquivoContratoRef.current?.click()}>
-                  {arquivoContrato ? "Trocar arquivo" : "Selecionar PDF"}
-                </Button>
-                {arquivoContrato && <span className="truncate text-sm text-muted-foreground">{arquivoContrato.name}</span>}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Opcional — você poderá adicionar depois, na tela de detalhes do contrato. Máx. 10MB.
-              </p>
-              {erroArquivo && <p className="text-xs text-destructive">{erroArquivo}</p>}
+
+            <div className="rounded-lg border">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 p-2.5 text-left text-sm font-medium"
+                onClick={() => setMostrarUploadPdf((v) => !v)}
+              >
+                {mostrarUploadPdf ? (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                )}
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                Anexar PDF do contrato (opcional)
+                {arquivoContrato && (
+                  <span className="ml-auto truncate text-xs font-normal text-muted-foreground">
+                    {arquivoContrato.name}
+                  </span>
+                )}
+              </button>
+              {mostrarUploadPdf && (
+                <div className="flex flex-col gap-2 border-t p-2.5">
+                  <input
+                    ref={inputArquivoContratoRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={selecionarArquivoContrato}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => inputArquivoContratoRef.current?.click()}
+                    >
+                      {arquivoContrato ? "Trocar arquivo" : "Selecionar PDF"}
+                    </Button>
+                    {arquivoContrato && (
+                      <span className="truncate text-sm text-muted-foreground">{arquivoContrato.name}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Você poderá adicionar depois, na tela de detalhes do contrato. Máx. 10MB.
+                  </p>
+                  {erroArquivo && <p className="text-xs text-destructive">{erroArquivo}</p>}
+                </div>
+              )}
             </div>
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>
-          <DialogFooter>
+          <DialogFooter className="mx-0 mb-0">
             <Button variant="outline" onClick={() => setDialogAberto(false)}>
               Cancelar
             </Button>
@@ -734,7 +638,7 @@ export function ContratosPage() {
           <DialogHeader>
             <DialogTitle>Renovar Contrato</DialogTitle>
             <DialogDescription>
-              Cria um novo contrato vinculado ao atual (que passa para o status "renovado") e gera os novos
+              Cria um novo contrato vinculado ao atual (que passa para o status "encerrado") e gera os novos
               pagamentos.
             </DialogDescription>
           </DialogHeader>
@@ -889,18 +793,12 @@ export function ContratosPage() {
       <ConfirmDialog
         open={Boolean(confirmacao)}
         onOpenChange={(open) => !open && setConfirmacao(null)}
-        titulo={confirmacao?.acao === "encerrar" ? "Encerrar contrato" : "Rescindir contrato"}
-        descricao={
-          confirmacao?.acao === "encerrar"
-            ? "O contrato será marcado como encerrado e o imóvel volta a ficar vago."
-            : "O contrato será marcado como rescindido e o imóvel volta a ficar vago."
-        }
-        textoConfirmar={confirmacao?.acao === "encerrar" ? "Encerrar" : "Rescindir"}
-        destrutivo={confirmacao?.acao === "rescindir"}
+        titulo="Encerrar contrato"
+        descricao="O contrato será marcado como encerrado e o imóvel volta a ficar vago."
+        textoConfirmar="Encerrar"
         onConfirm={() => {
           if (!confirmacao) return;
-          if (confirmacao.acao === "encerrar") mutEncerrar.mutate(confirmacao.contrato.id);
-          else mutRescindir.mutate(confirmacao.contrato.id);
+          mutEncerrar.mutate(confirmacao.id);
         }}
       />
 

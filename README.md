@@ -61,6 +61,26 @@ npm run db:seed
 
 `db:seed` é idempotente — pode ser executado novamente sem duplicar registros.
 
+**Migration `contrato_status_unificado`**: fundiu os antigos campos
+`Contrato.statusAprovacao` (aprovado/pendente_aprovacao/rejeitado) e
+`Contrato.ativo`/`desativadoEm` (eixo de visibilidade) dentro de um único
+campo `Contrato.status`, e removeu os valores legados `rescindido`/`renovado`
+(ambos viram `encerrado`). Dados existentes foram migrados automaticamente:
+contratos com `statusAprovacao` pendente/rejeitado tiveram o `status`
+substituído por esse valor; os demais com status legado `rescindido`/
+`renovado`/`inativo` viraram `encerrado`. Rode `npm run db:migrate` para
+aplicar (nenhuma ação manual necessária).
+
+**Migration `pagamento_admin_calculado`**: adiciona a `PagamentoAdministrador`
+os campos `quantidadeImoveis`/`valorTotalAlugueis`/`percentual`/`valorPrevisto`
+(snapshot do cálculo automático — ver "Mensalidade do Administrador" abaixo) e
+uma constraint única `(administradorId, mesReferencia)`. O status
+`pendente` deixa de existir, virando `aguardando_pagamento`. Os registros
+legados existentes antes desta migration recebem um backfill best-effort
+(`valorPrevisto`/`valorTotalAlugueis` calculados a partir do `valorPago`
+histórico, `quantidadeImoveis` fixado em 1 por não ter sido rastreado
+antes) — sem perda de dados, mas sem precisão retroativa total.
+
 ## Como rodar
 
 ```bash
@@ -110,13 +130,15 @@ Pendentes" no menu, além de um email mockado correspondente em "Emails
 Enviados"). `administrador1` fica vinculado a 2 imóveis e `administrador2` a 1
 (para testar o acesso restrito por imóvel), além de gastos de manutenção
 variados (incluindo uma limpeza **mensal recorrente**, que gera automaticamente
-as próximas ocorrências ao abrir a tela de Manutenção) e mensalidades de
-administrador dos últimos 3 meses.
+as próximas ocorrências ao abrir a tela de Manutenção). A mensalidade de
+`administrador1` dos últimos 3 meses fechados é calculada de verdade a partir
+desses dados (10% dos aluguéis de imóveis com aluguel do mês já pago — ver
+"Mensalidade do Administrador" abaixo); `administrador2` nunca tem mensalidade
+porque o único imóvel vinculado a ele fica vago.
 
 `db:seed` também é seguro de rodar depois de já ter usado o sistema de verdade:
 ele nunca sobrescreve dados fora dos IDs/e-mails fixos que ele mesmo criou, e
-não recria contratos de demonstração que já foram encerrados/rescindidos
-manualmente.
+não recria contratos de demonstração que já foram encerrados manualmente.
 
 ## Funcionalidades por perfil
 
@@ -140,14 +162,18 @@ própria conta).
 
 Imóveis e Inquilinos têm um ciclo de vida com 3 estados — Ativo / Inativo /
 **Excluído** (soft delete: oculta da listagem sem apagar o histórico de
-contratos e pagamentos, com opção de **restaurar**). Administradores,
-Proprietários e Contratos seguem um padrão diferente e mais recente: apenas
+contratos e pagamentos, com opção de **restaurar**). Administradores e
+Proprietários seguem um padrão diferente e mais recente: apenas
 **Ativo / Inativo** (desativa o login ou oculta da listagem padrão, sem
 "excluído" intermediário) mais uma **exclusão definitiva** (hard delete, sem
 volta) — só permitida quando o registro não tem nenhuma ação/histórico
 associado (senão o sistema recusa com um erro claro e sugere apenas
 desativar) — protegida por confirmação dupla (checkbox + digitar um campo de
 confirmação) no frontend.
+
+Contratos têm um ciclo de vida próprio, mais simples: `pendente_aprovacao` →
+`ativo`/`rejeitado` → `encerrado` (um único campo `status`, sem eixo de
+visibilidade separado — ver "Contratos" abaixo).
 
 **Aprovação de contratos**: contratos cadastrados pelo próprio Proprietário
 entram em vigor imediatamente; os cadastrados por um Administrador nascem como
@@ -165,6 +191,17 @@ Dashboard, Relatórios, Configurações, Proprietários ou à própria mensalida
 (apenas o Proprietário vê e registra o pagamento do Administrador). Contratos
 que cadastra ficam pendentes de aprovação (ver acima).
 
+**Mensalidade do Administrador**: calculada automaticamente pelo sistema, nunca
+cadastrada manualmente — equivale a 10% da soma dos aluguéis dos imóveis pelos
+quais o administrador é responsável (via `GET /pagamentos-admin/calcular/:administradorId/:mesReferencia`),
+e só passa a existir quando **todos** os inquilinos desses imóveis já pagaram
+o aluguel daquele mês (antes disso, a tela mostra a lista de quem falta pagar,
+sem gerar nenhum registro). Administradores **desativados** somem
+completamente da listagem de mensalidades e do cálculo — Opção A entre as
+duas discutidas (esconder da listagem vs. mostrar acinzentado): o registro
+histórico continua no banco (nunca é apagado), só fica invisível enquanto o
+administrador estiver inativo, e volta a aparecer se ele for reativado.
+
 **Inquilino** — vê apenas os próprios dados: imóvel alugado com o próximo
 vencimento em destaque, contrato vigente (com download em PDF — a versão
 assinada enviada pelo Proprietário tem prioridade sobre a gerada
@@ -173,10 +210,29 @@ histórico de pagamentos (com download de recibo em PDF), possibilidade de
 relatar um problema no imóvel (abre um chamado de manutenção pendente de
 aprovação do Proprietário), e edição do próprio perfil/senha.
 
+### Dashboard
+
+Todos os KPIs (total de imóveis, vagos, alugados, em manutenção, receita
+esperada/recebida, despesas, inadimplência) e o gráfico de receitas x despesas
+**excluem imóveis excluídos (soft delete) ou com status `inativo`** — tanto o
+imóvel em si quanto qualquer pagamento/gasto de manutenção ligado a um
+contrato daquele imóvel. Isso vale também para as listas "Próximos
+vencimentos", "Pagamentos atrasados" e "Manutenções pendentes". A mensalidade
+de administrador é a única métrica financeira do dashboard que não passa por
+esse filtro (não é vinculada a um imóvel específico).
+
 ### Contratos
 
-Além do CRUD básico (criar, renovar, encerrar, rescindir, desativar/reativar/
-excluir), cada contrato tem uma página de detalhe própria com:
+Um contrato tem um único campo de estado (`status`): `pendente_aprovacao` →
+`ativo` (ou `rejeitado`) → `encerrado`. Não existe mais eixo separado de
+visibilidade nem os estados `rescindido`/`renovado`/`inativo` de versões
+anteriores — **renovar** um contrato ativo simplesmente encerra o atual e cria
+um novo em `ativo`, e a listagem geral (`GET /contratos`) só retorna
+`ativo`/`encerrado` (contratos `pendente_aprovacao`/`rejeitado` só aparecem na
+tela dedicada "Contratos Pendentes", nunca na listagem geral) — filtrável por
+3 abas (Todos/Ativo/Encerrado, cada uma com contador). Além do CRUD básico
+(criar, renovar, encerrar, excluir), cada contrato tem uma página de detalhe
+própria com:
 
 - **Caução parcelada**: ao criar/renovar um contrato, a caução pode ser
   parcelada em até 3x. Cada parcela tem vencimento, status (pendente/pago/
@@ -191,9 +247,9 @@ excluir), cada contrato tem uma página de detalhe própria com:
   disponível tanto no fluxo de renovação (vinculando ao contrato anterior)
   quanto avulso em qualquer contrato ativo. Download exige autenticação (ao
   contrário dos demais PDFs do sistema, servidos como arquivo estático).
-- **Aprovação** (ver seção acima) e **desativar/reativar/excluir** (exclusão
-  definitiva só permitida sem pagamentos/parcelas de caução vinculados — na
-  prática, contratos pendentes ou rejeitados).
+- **Aprovação** (ver seção acima) e **exclusão definitiva**, só permitida sem
+  pagamentos/parcelas de caução vinculados — na prática, restrita a contratos
+  pendentes ou rejeitados.
 
 ### Manutenção
 
@@ -216,10 +272,10 @@ excluir), cada contrato tem uma página de detalhe própria com:
 
 ### Pagamentos
 
-- **Filtros por período**: abas "Este Mês", "Próximo Mês" (padrão — o objetivo
-  é ver só o que vence em breve, não todos os pendentes de uma vez),
-  "Atrasados", "Todos" e "Pagos", cada uma com contador no próprio label; um
-  seletor de mês/ano permite navegar para qualquer mês além do atual/seguinte.
+- **Filtros por status**: 3 abas — "Todos" (padrão), "Atrasados" e "Pagos" —
+  cada uma com contador no label; ordenação padrão por vencimento mais próximo
+  primeiro. "Atrasado" é sempre um pendente cujo vencimento já passou (a
+  promoção pendente→atrasado é automática a cada leitura).
 - **Desfazer pagamento**: reverte um "marcar como pago" feito por engano,
   voltando o status para pendente; opcionalmente remove também o recibo em PDF
   gerado (checkbox marcado por padrão no modal de confirmação).

@@ -1,18 +1,6 @@
 import { z } from "zod";
 import { FORMA_PAGAMENTO_ADMIN } from "../../constants/dominio";
 
-export const criarPagamentoAdminSchema = z.object({
-  administradorId: z.string().min(1),
-  mesReferencia: z.string().regex(/^\d{4}-\d{2}$/, "mesReferencia deve estar no formato YYYY-MM"),
-  dataVencimento: z.coerce.date(),
-  observacoes: z.string().optional(),
-});
-
-export const atualizarPagamentoAdminSchema = z.object({
-  dataVencimento: z.coerce.date().optional(),
-  observacoes: z.string().optional(),
-});
-
 export const marcarPagoAdminSchema = z.object({
   valorPago: z.number().positive(),
   dataPagamento: z.coerce.date().optional(),
@@ -24,4 +12,9 @@ export const listarPagamentosAdminQuerySchema = z.object({
   administradorId: z.string().optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
+});
+
+export const calcularPagamentoAdminParamsSchema = z.object({
+  administradorId: z.string().min(1),
+  mesReferencia: z.string().regex(/^\d{4}-\d{2}$/, "mesReferencia deve estar no formato YYYY-MM"),
 });

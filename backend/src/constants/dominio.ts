@@ -3,7 +3,7 @@
 // Usadas tanto nos schemas Zod quanto na logica de negocio.
 
 export const STATUS_IMOVEL = ["vago", "alugado", "manutencao", "inativo"] as const;
-export const STATUS_CONTRATO = ["ativo", "encerrado", "rescindido", "renovado"] as const;
+export const STATUS_CONTRATO = ["pendente_aprovacao", "ativo", "rejeitado", "encerrado"] as const;
 export const TIPO_PAGAMENTO = ["aluguel", "caucao", "multa", "outro"] as const;
 export const STATUS_PAGAMENTO = ["pendente", "pago", "atrasado"] as const;
 export const FORMA_PAGAMENTO = ["pix", "transferencia", "dinheiro", "boleto", "outro"] as const;
@@ -28,7 +28,8 @@ export const MESES_POR_RECORRENCIA: Record<Exclude<(typeof RECORRENCIA_MANUTENCA
   semestral: 6,
   anual: 12,
 };
-export const STATUS_PAGAMENTO_ADMIN = ["pago", "pendente", "atrasado"] as const;
+export const STATUS_PAGAMENTO_ADMIN = ["pago", "aguardando_pagamento", "atrasado"] as const;
+export const PERCENTUAL_MENSALIDADE_ADMIN = 10;
 export const FORMA_PAGAMENTO_ADMIN = ["pix", "transferencia", "dinheiro"] as const;
 
 export type StatusImovel = (typeof STATUS_IMOVEL)[number];

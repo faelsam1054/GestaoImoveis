@@ -35,10 +35,11 @@ export const rejeitarContratoSchema = z.object({
 });
 
 export const listarContratosQuerySchema = z.object({
-  status: z.enum(["ativo", "encerrado", "rescindido", "renovado"]).optional(),
+  // pendente_aprovacao/rejeitado nunca aparecem na listagem geral (ver
+  // contratos.service.ts:listar), entao nao sao valores aceitos aqui.
+  status: z.enum(["ativo", "encerrado"]).optional(),
   imovelId: z.string().optional(),
   inquilinoId: z.string().optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
-  ativoFiltro: z.enum(["ativos", "todos", "inativos"]).optional(),
 });

@@ -181,19 +181,14 @@ model Contrato {
   // 2 ou 3: gera registros em CaucaoParcela em vez do Pagamento avulso (ver contratos.service.ts).
   caucaoNumeroParcelas Int @default(1)
 
-  status String @default("ativo") // ativo | encerrado | rescindido | renovado
+  // Campo unico de estado (fundido com o antigo "statusAprovacao" - ver
+  // migration contrato_status_unificado): contrato criado pelo Proprietario
+  // nasce ja "ativo"; criado por Administrador nasce "pendente_aprovacao" -
+  // so passa a gerar pagamentos, ocupar o imovel e ganhar o PDF quando o
+  // Proprietario aprova (vira "ativo") ou "rejeitado" (ver contratos.service.ts:
+  // criar/aprovar/rejeitar). "encerrado" e setado apenas pelo endpoint /encerrar.
+  status String @default("ativo") // pendente_aprovacao | ativo | rejeitado | encerrado
 
-  // Eixo independente de "status": visibilidade/soft-delete (nao confundir
-  // com status="ativo", que e ciclo de vida). Contrato desativado some da
-  // listagem padrao mas mantem todo o historico de pagamentos/recibos.
-  ativo        Boolean   @default(true)
-  desativadoEm DateTime?
-
-  // Fluxo de aprovacao: contrato criado pelo Proprietario nasce ja 'aprovado'.
-  // Criado por Administrador nasce 'pendente_aprovacao' - so passa a gerar
-  // pagamentos, ocupar o imovel e ganhar o PDF quando o Proprietario aprova
-  // (ver contratos.service.ts: criar/aprovar/rejeitar).
-  statusAprovacao String    @default("aprovado") // aprovado | pendente_aprovacao | rejeitado
   motivoRejeicao  String?
   dataRejeicao    DateTime?
   dataAprovacao   DateTime?
@@ -221,7 +216,6 @@ model Contrato {
   @@index([imovelId])
   @@index([inquilinoId])
   @@index([status])
-  @@index([statusAprovacao])
 }
 
 // Documento anexado a um contrato registrando as mudancas de uma renovacao
@@ -359,16 +353,27 @@ model GastoManutencao {
 // ── Financeiro: mensalidade do administrador ─────────────────────────────
 // Visivel/editavel apenas pelo Proprietario (regra aplicada no RBAC, nao no schema).
 
+// Mensalidade e sempre calculada pelo sistema (nunca criada manualmente - ver
+// pagamentos-admin.service.ts: calcular). O registro so passa a existir
+// quando todos os inquilinos dos imoveis do administrador ja pagaram o
+// aluguel do mes; os campos abaixo (quantidadeImoveis/valorTotalAlugueis/
+// percentual/valorPrevisto) sao um snapshot do calculo naquele momento, para
+// o historico nao mudar se os vinculos do administrador mudarem depois.
 model PagamentoAdministrador {
   id              String  @id @default(cuid())
   administradorId String
   administrador   Usuario @relation("AdministradorPagamentos", fields: [administradorId], references: [id])
 
-  mesReferencia  String // formato "YYYY-MM"
+  mesReferencia      String // formato "YYYY-MM"
+  quantidadeImoveis  Int
+  valorTotalAlugueis Float
+  percentual         Float // percentual aplicado sobre valorTotalAlugueis (hoje sempre 10)
+  valorPrevisto      Float // = valorTotalAlugueis * percentual / 100
+
   valorPago      Float?
   dataPagamento  DateTime?
   dataVencimento DateTime
-  status         String  @default("pendente") // pago | pendente | atrasado
+  status         String  @default("aguardando_pagamento") // aguardando_pagamento | pago | atrasado
   formaPagamento String? // pix | transferencia | dinheiro
   observacoes    String?
   comprovantePdfUrl String?
@@ -376,6 +381,7 @@ model PagamentoAdministrador {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([administradorId, mesReferencia])
   @@index([administradorId])
   @@index([mesReferencia])
 }

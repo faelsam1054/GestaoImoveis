@@ -55,7 +55,7 @@ export async function listar(filtros: FiltrosPagamento) {
     prisma.pagamento.findMany({
       where,
       include: includePadrao,
-      orderBy: { dataVencimento: "desc" },
+      orderBy: { dataVencimento: "asc" },
       skip: paginacao.skip,
       take: paginacao.take,
     }),

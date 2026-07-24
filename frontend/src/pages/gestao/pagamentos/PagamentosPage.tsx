@@ -9,7 +9,6 @@ import {
   desfazerPagamento,
   type PagamentoAvulsoInput,
   type MarcarPagoInput,
-  type FiltrosPagamento,
 } from "@/api/pagamentos";
 import { listarContratos } from "@/api/contratos";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,51 +45,14 @@ const AVULSO_VAZIO: PagamentoAvulsoInput = {
   observacoes: "",
 };
 
-// new Date(ano, mes, 1) com mes=12 rola automaticamente pro ano seguinte
-// (dezembro -> janeiro), entao a virada de ano e tratada de graca.
-function competenciaDe(data: Date): string {
-  return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
-}
-function competenciaMesAtual(): string {
-  return competenciaDe(new Date());
-}
-function competenciaProximoMes(): string {
-  const hoje = new Date();
-  return competenciaDe(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1));
-}
-
-type AbaPagamento = "esteMes" | "proximoMes" | "atrasados" | "todos" | "pagos";
-
-const ABAS: { valor: AbaPagamento; label: string }[] = [
-  { valor: "esteMes", label: "Este Mês" },
-  { valor: "proximoMes", label: "Próximo Mês" },
-  { valor: "atrasados", label: "Atrasados" },
-  { valor: "todos", label: "Todos" },
-  { valor: "pagos", label: "Pagos" },
-];
-
-function filtrosDaAba(aba: AbaPagamento, mesCustom: string): FiltrosPagamento {
-  switch (aba) {
-    case "atrasados":
-      return { status: "atrasado" };
-    case "todos":
-      return { status: "pendente" };
-    case "pagos":
-      return { status: "pago" };
-    case "esteMes":
-    case "proximoMes":
-    default:
-      return { status: "pendente", competencia: mesCustom };
-  }
-}
+type AbaPagamento = "todos" | "atrasados" | "pagos";
 
 export function PagamentosPage() {
   const { usuario } = useAuth();
   const podeRegistrar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeRegistrarPagamentos;
   const queryClient = useQueryClient();
 
-  const [aba, setAba] = useState<AbaPagamento>("proximoMes");
-  const [mesCustom, setMesCustom] = useState<string>(competenciaProximoMes());
+  const [aba, setAba] = useState<AbaPagamento>("todos");
   const [dialogAvulsoAberto, setDialogAvulsoAberto] = useState(false);
   const [formAvulso, setFormAvulso] = useState<PagamentoAvulsoInput>(AVULSO_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
@@ -105,52 +67,32 @@ export function PagamentosPage() {
   const [desfazendo, setDesfazendo] = useState<Pagamento | null>(null);
   const [removerRecibo, setRemoverRecibo] = useState(true);
 
-  function selecionarAba(novaAba: AbaPagamento) {
-    setAba(novaAba);
-    if (novaAba === "esteMes") setMesCustom(competenciaMesAtual());
-    if (novaAba === "proximoMes") setMesCustom(competenciaProximoMes());
-  }
-
-  const mostraSeletorMes = aba === "esteMes" || aba === "proximoMes";
-
-  // Contadores de cada aba: sempre fixos no mes "canonico" da aba (mes atual/
-  // seguinte), independente do seletor de mes customizado - assim o label
-  // "Próximo Mês (5)" nao muda so porque o usuario esta navegando por outro
-  // mes na aba ativa.
-  const queryEsteMes = useQuery({
-    queryKey: ["pagamentos", "pendente", competenciaMesAtual()],
-    queryFn: () => listarPagamentos({ status: "pendente", competencia: competenciaMesAtual() }),
+  // Contagens exatas de cada aba (pageSize:1 - so interessa paginacao.total,
+  // que reflete o total real mesmo alem do limite de 100 itens por pagina).
+  const queryTotalTodos = useQuery({
+    queryKey: ["pagamentos", "contagem", "todos"],
+    queryFn: () => listarPagamentos({ pageSize: 1 }),
   });
-  const queryProximoMes = useQuery({
-    queryKey: ["pagamentos", "pendente", competenciaProximoMes()],
-    queryFn: () => listarPagamentos({ status: "pendente", competencia: competenciaProximoMes() }),
+  const queryTotalAtrasados = useQuery({
+    queryKey: ["pagamentos", "contagem", "atrasado"],
+    queryFn: () => listarPagamentos({ status: "atrasado", pageSize: 1 }),
   });
-  const queryAtrasados = useQuery({
-    queryKey: ["pagamentos", "atrasado"],
-    queryFn: () => listarPagamentos({ status: "atrasado" }),
+  const queryTotalPagos = useQuery({
+    queryKey: ["pagamentos", "contagem", "pago"],
+    queryFn: () => listarPagamentos({ status: "pago", pageSize: 1 }),
   });
-  const queryTodosPendentes = useQuery({
-    queryKey: ["pagamentos", "pendente", "todos"],
-    queryFn: () => listarPagamentos({ status: "pendente" }),
-  });
-  const queryPagos = useQuery({
-    queryKey: ["pagamentos", "pago"],
-    queryFn: () => listarPagamentos({ status: "pago" }),
-  });
-
-  const contagens: Record<AbaPagamento, number | undefined> = {
-    esteMes: queryEsteMes.data?.paginacao.total,
-    proximoMes: queryProximoMes.data?.paginacao.total,
-    atrasados: queryAtrasados.data?.paginacao.total,
-    todos: queryTodosPendentes.data?.paginacao.total,
-    pagos: queryPagos.data?.paginacao.total,
+  const contagens = {
+    todos: queryTotalTodos.data?.paginacao.total,
+    atrasados: queryTotalAtrasados.data?.paginacao.total,
+    pagos: queryTotalPagos.data?.paginacao.total,
   };
 
-  // Conteudo exibido na tabela: reflete a aba ativa + o mes customizado (que
-  // so diverge do "canonico" se o usuario mexer no seletor de mes).
+  // Lista exibida: filtrada no servidor pela aba ativa (evita o limite de 100
+  // itens por pagina misturar status quando o total geral e maior que isso).
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["pagamentos", "ativo", aba, mesCustom],
-    queryFn: () => listarPagamentos(filtrosDaAba(aba, mesCustom)),
+    queryKey: ["pagamentos", "lista", aba],
+    queryFn: () =>
+      listarPagamentos(aba === "todos" ? {} : { status: aba === "atrasados" ? "atrasado" : "pago" }),
   });
 
   const { data: contratosAtivos } = useQuery({
@@ -228,33 +170,15 @@ export function PagamentosPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Tabs value={aba} onValueChange={(v) => selecionarAba(v as AbaPagamento)}>
-          <TabsList>
-            {ABAS.map(({ valor, label }) => (
-              <TabsTrigger key={valor} value={valor}>
-                {label}
-                {contagens[valor] !== undefined ? ` (${contagens[valor]})` : ""}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
-        {mostraSeletorMes && (
-          <div className="flex items-center gap-2">
-            <Label htmlFor="mesCustom" className="text-sm text-muted-foreground">
-              Mês:
-            </Label>
-            <Input
-              id="mesCustom"
-              type="month"
-              className="w-40"
-              value={mesCustom}
-              onChange={(e) => setMesCustom(e.target.value)}
-            />
-          </div>
-        )}
-      </div>
+      <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPagamento)} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="todos">Todos{contagens.todos !== undefined ? ` (${contagens.todos})` : ""}</TabsTrigger>
+          <TabsTrigger value="atrasados">
+            Atrasados{contagens.atrasados !== undefined ? ` (${contagens.atrasados})` : ""}
+          </TabsTrigger>
+          <TabsTrigger value="pagos">Pagos{contagens.pagos !== undefined ? ` (${contagens.pagos})` : ""}</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {isLoading && (
         <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">

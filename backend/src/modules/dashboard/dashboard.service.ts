@@ -23,6 +23,12 @@ const includeListaPagamento = {
   },
 } as const;
 
+// Imovel "ativo e visivel" = nao excluido (soft delete) e status != inativo
+// (o ciclo de vida do imovel nao tem coluna "ativo" separada - esse eixo ja
+// mora dentro de "status", ver schema.prisma). Usado para tirar imoveis
+// excluidos/inativos de todos os KPIs do dashboard.
+const imovelAtivoEVisivel = { excluidoEm: null, status: { not: "inativo" } } as const;
+
 export async function resumo() {
   await atualizarAtrasados();
 
@@ -34,31 +40,33 @@ export async function resumo() {
   em7dias.setDate(hoje.getDate() + 7);
 
   const [totalImoveis, imoveisPorStatus] = await Promise.all([
-    prisma.imovel.count(),
-    prisma.imovel.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.imovel.count({ where: imovelAtivoEVisivel }),
+    prisma.imovel.groupBy({ by: ["status"], where: { excluidoEm: null }, _count: { _all: true } }),
   ]);
   const statusMap = Object.fromEntries(imoveisPorStatus.map((g) => [g.status, g._count._all]));
 
   const [receitaEsperadaAgg, receitaRecebidaAgg, despesaManutencaoAgg, despesaAdminAgg, inadimplenciaAgg] =
     await Promise.all([
       prisma.pagamento.aggregate({
-        where: { competencia: competenciaAtual },
+        where: { competencia: competenciaAtual, contrato: { imovel: imovelAtivoEVisivel } },
         _sum: { valorPrevisto: true },
       }),
       prisma.pagamento.aggregate({
-        where: { competencia: competenciaAtual, status: "pago" },
+        where: { competencia: competenciaAtual, status: "pago", contrato: { imovel: imovelAtivoEVisivel } },
         _sum: { valorPago: true },
       }),
       prisma.gastoManutencao.aggregate({
-        where: { status: "pago", dataPagamento: { gte: inicioMes, lte: fimMes } },
+        where: { status: "pago", dataPagamento: { gte: inicioMes, lte: fimMes }, imovel: imovelAtivoEVisivel },
         _sum: { valor: true },
       }),
+      // Mensalidade de administrador nao e vinculada a um imovel especifico
+      // (e por administrador, sobre o portfolio dele) - nao ha o que filtrar aqui.
       prisma.pagamentoAdministrador.aggregate({
         where: { status: "pago", dataPagamento: { gte: inicioMes, lte: fimMes } },
         _sum: { valorPago: true },
       }),
       prisma.pagamento.aggregate({
-        where: { status: "atrasado" },
+        where: { status: "atrasado", contrato: { imovel: imovelAtivoEVisivel } },
         _sum: { valorPrevisto: true },
         _count: { _all: true },
       }),
@@ -66,19 +74,23 @@ export async function resumo() {
 
   const [proximosVencimentos, pagamentosAtrasados, manutencoesPendentes] = await Promise.all([
     prisma.pagamento.findMany({
-      where: { status: "pendente", dataVencimento: { gte: hoje, lte: em7dias } },
+      where: {
+        status: "pendente",
+        dataVencimento: { gte: hoje, lte: em7dias },
+        contrato: { imovel: imovelAtivoEVisivel },
+      },
       include: includeListaPagamento,
       orderBy: { dataVencimento: "asc" },
       take: 10,
     }),
     prisma.pagamento.findMany({
-      where: { status: "atrasado" },
+      where: { status: "atrasado", contrato: { imovel: imovelAtivoEVisivel } },
       include: includeListaPagamento,
       orderBy: { dataVencimento: "asc" },
       take: 10,
     }),
     prisma.gastoManutencao.findMany({
-      where: { status: { in: ["orcamento", "aprovado"] } },
+      where: { status: { in: ["orcamento", "aprovado"] }, imovel: imovelAtivoEVisivel },
       include: { imovel: { select: { logradouro: true, numero: true } } },
       orderBy: { createdAt: "desc" },
       take: 10,
@@ -118,16 +130,18 @@ export async function graficoReceitasDespesas() {
   const [receitasPorMes, despesasAdminPorMes, gastosManutencaoPagos] = await Promise.all([
     prisma.pagamento.groupBy({
       by: ["competencia"],
-      where: { competencia: { in: meses }, status: "pago" },
+      where: { competencia: { in: meses }, status: "pago", contrato: { imovel: imovelAtivoEVisivel } },
       _sum: { valorPago: true },
     }),
+    // Mensalidade de administrador nao e vinculada a um imovel especifico -
+    // nao ha o que filtrar aqui (mesma observacao de resumo()).
     prisma.pagamentoAdministrador.groupBy({
       by: ["mesReferencia"],
       where: { mesReferencia: { in: meses }, status: "pago" },
       _sum: { valorPago: true },
     }),
     prisma.gastoManutencao.findMany({
-      where: { status: "pago", dataPagamento: { not: null } },
+      where: { status: "pago", dataPagamento: { not: null }, imovel: imovelAtivoEVisivel },
       select: { valor: true, dataPagamento: true },
     }),
   ]);

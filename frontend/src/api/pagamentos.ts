@@ -21,10 +21,11 @@ export interface FiltrosPagamento {
   status?: StatusPagamento;
   contratoId?: string;
   competencia?: string;
+  pageSize?: number;
 }
 
 export async function listarPagamentos(filtros: FiltrosPagamento = {}): Promise<Paginado<Pagamento>> {
-  const { data } = await api.get("/pagamentos", { params: { ...filtros, pageSize: 100 } });
+  const { data } = await api.get("/pagamentos", { params: { pageSize: 100, ...filtros } });
   return data;
 }
 

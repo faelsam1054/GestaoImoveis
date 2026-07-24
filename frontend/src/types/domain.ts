@@ -1,6 +1,5 @@
 export const STATUS_IMOVEL = ["vago", "alugado", "manutencao", "inativo"] as const;
-export const STATUS_CONTRATO = ["ativo", "encerrado", "rescindido", "renovado"] as const;
-export const STATUS_APROVACAO_CONTRATO = ["aprovado", "pendente_aprovacao", "rejeitado"] as const;
+export const STATUS_CONTRATO = ["pendente_aprovacao", "ativo", "rejeitado", "encerrado"] as const;
 export const TIPO_PAGAMENTO = ["aluguel", "caucao", "multa", "outro"] as const;
 export const STATUS_PAGAMENTO = ["pendente", "pago", "atrasado"] as const;
 export const FORMA_PAGAMENTO = ["pix", "transferencia", "dinheiro", "boleto", "outro"] as const;
@@ -21,7 +20,6 @@ export const STATUS_CAUCAO_PARCELA = ["pendente", "pago", "atrasado"] as const;
 
 export type StatusImovel = (typeof STATUS_IMOVEL)[number];
 export type StatusContrato = (typeof STATUS_CONTRATO)[number];
-export type StatusAprovacaoContrato = (typeof STATUS_APROVACAO_CONTRATO)[number];
 export type TipoPagamento = (typeof TIPO_PAGAMENTO)[number];
 export type StatusPagamento = (typeof STATUS_PAGAMENTO)[number];
 export type FormaPagamento = (typeof FORMA_PAGAMENTO)[number];
@@ -104,9 +102,6 @@ export interface Contrato {
   valorCaucao: number | null;
   caucaoNumeroParcelas: number;
   status: StatusContrato;
-  ativo: boolean;
-  desativadoEm: string | null;
-  statusAprovacao: StatusAprovacaoContrato;
   motivoRejeicao: string | null;
   dataRejeicao: string | null;
   dataAprovacao: string | null;
@@ -238,10 +233,14 @@ export interface PagamentoAdministrador {
   administradorId: string;
   administrador?: { id: string; nome: string; email: string };
   mesReferencia: string;
+  quantidadeImoveis: number;
+  valorTotalAlugueis: number;
+  percentual: number;
+  valorPrevisto: number;
   valorPago: number | null;
   dataPagamento: string | null;
   dataVencimento: string;
-  status: "pago" | "pendente" | "atrasado";
+  status: "pago" | "aguardando_pagamento" | "atrasado";
   formaPagamento: FormaPagamentoAdmin | null;
   observacoes: string | null;
 }

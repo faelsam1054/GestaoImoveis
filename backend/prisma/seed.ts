@@ -489,8 +489,8 @@ async function main() {
 
   // ── 6b. Contrato pendente de aprovacao (Ajuste 1: aprovacao de contratos) ─
   // Simula um Administrador cadastrando um contrato: nasce com
-  // statusAprovacao="pendente_aprovacao", sem gerar pagamentos nem ocupar o
-  // imovel ainda (isso so acontece quando o Proprietario aprova, via
+  // status="pendente_aprovacao", sem gerar pagamentos nem ocupar o imovel
+  // ainda (isso so acontece quando o Proprietario aprova, via
   // POST /contratos/:id/aprovar - ver contratos.service.ts).
   const contratoPendenteExistente = await prisma.contrato.findFirst({ where: { imovelId: imovel6.id } });
   let contratoPendente = contratoPendenteExistente;
@@ -505,8 +505,7 @@ async function main() {
         dataFim: dataFimPendente,
         diaVencimento: 10,
         valorAluguel: 1600,
-        status: "ativo",
-        statusAprovacao: "pendente_aprovacao",
+        status: "pendente_aprovacao",
         criadoPorId: admin1.id,
       },
     });
@@ -605,30 +604,89 @@ async function main() {
   }
   console.log("✓ 1 manutenção recorrente mensal (limpeza da kitnet - próximas ocorrências geradas ao abrir a tela)");
 
-  // ── 8. Pagamentos de administrador (ultimos 3 meses, 2 administradores) ──
+  // ── 8. Mensalidades de administrador (calculadas, ultimos meses) ─────────
+  // A partir do AJUSTE 6, mensalidade nunca e criada manualmente - e sempre
+  // 10% da soma dos alugueis dos imoveis do admin, e so existe quando todos
+  // os inquilinos ja pagaram aquele mes (ver pagamentos-admin.service.ts:
+  // calcular). Reproduzimos aqui a mesma logica (nao importamos o service
+  // diretamente - mesma escolha ja feita acima para calculo de caucao
+  // parcelada, o seed nao passa pela camada de servico) para gerar historico
+  // de demonstracao consistente com os contratos/pagamentos criados acima.
+  //
+  // admin1 (vinculado a imovel1 e imovel2, ambos alugados) tera historico
+  // real dos ultimos meses; admin2 (vinculado so ao imovel3, que fica vago)
+  // nunca tera mensalidade - "sem imoveis" e um estado valido e ja tratado
+  // pela tela (nao e um bug deixar admin2 sem nenhum registro).
+  async function calcularEcriarMensalidadeAdminSeed(administradorId: string, mesReferencia: string) {
+    const existente = await prisma.pagamentoAdministrador.findUnique({
+      where: { administradorId_mesReferencia: { administradorId, mesReferencia } },
+    });
+    if (existente) return existente;
+
+    const contratosAtivos = await prisma.contrato.findMany({
+      where: {
+        status: "ativo",
+        imovel: { excluidoEm: null, status: { not: "inativo" }, administradoresVinculados: { some: { administradorId } } },
+      },
+      include: { pagamentos: { where: { tipo: "aluguel", competencia: mesReferencia } } },
+    });
+
+    const quantidadeImoveis = contratosAtivos.length;
+    if (quantidadeImoveis === 0) return null; // "sem_imoveis" - nao cria registro
+
+    const todosPagos = contratosAtivos.every((c) => c.pagamentos[0]?.status === "pago");
+    if (!todosPagos) return null; // "aguardando_pagamento_inquilinos" - nao cria registro
+
+    const valorTotalAlugueis = contratosAtivos.reduce((soma, c) => soma + c.valorAluguel, 0);
+    const valorPrevisto = Math.round(valorTotalAlugueis * 0.1 * 100) / 100;
+    const [ano, mes] = mesReferencia.split("-").map(Number);
+
+    return prisma.pagamentoAdministrador.create({
+      data: {
+        administradorId,
+        mesReferencia,
+        quantidadeImoveis,
+        valorTotalAlugueis,
+        percentual: 10,
+        valorPrevisto,
+        dataVencimento: new Date(ano, mes, 5), // dia 5 do mes seguinte
+        status: "aguardando_pagamento",
+      },
+    });
+  }
+
   const pagAdminExistentes = await prisma.pagamentoAdministrador.count({
     where: { administradorId: { in: [admin1.id, admin2.id] } },
   });
   if (pagAdminExistentes === 0) {
-    for (const admin of [admin1, admin2]) {
-      for (let i = 2; i >= 0; i--) {
-        const dataVencimento = new Date(hoje.getFullYear(), hoje.getMonth() - i, 5);
-        const pago = i > 0;
-        await prisma.pagamentoAdministrador.create({
-          data: {
-            administradorId: admin.id,
-            mesReferencia: competenciaDe(dataVencimento),
-            dataVencimento,
-            valorPago: pago ? 800 : null,
-            dataPagamento: pago ? dataVencimento : null,
-            formaPagamento: pago ? "pix" : null,
-            status: pago ? "pago" : "pendente",
-          },
-        });
+    const mensalidadesCriadas = [];
+    // i=3..1: meses fechados (sempre "pago" no historico de aluguel gerado
+    // acima); i=0 e o mes atual, propositalmente deixado de fora - o mes
+    // corrente sempre tem pelo menos um aluguel ainda pendente/atrasado
+    // (criarContratoComHistorico so marca "pago" meses ja fechados), entao
+    // a tela mostra "aguardando pagamento dos inquilinos" ao vivo pra ele.
+    for (let i = 3; i >= 1; i--) {
+      const mesReferencia = competenciaDe(new Date(hoje.getFullYear(), hoje.getMonth() - i, 1));
+      for (const admin of [admin1, admin2]) {
+        const criado = await calcularEcriarMensalidadeAdminSeed(admin.id, mesReferencia);
+        if (criado) mensalidadesCriadas.push(criado);
       }
     }
+    // As duas mais antigas ja pagas, a mais recente ainda aguardando - da pra
+    // demonstrar tanto "Marcar como pago" quanto "Desfazer Pagamento".
+    for (const mensalidade of mensalidadesCriadas.slice(0, -1)) {
+      await prisma.pagamentoAdministrador.update({
+        where: { id: mensalidade.id },
+        data: {
+          status: "pago",
+          valorPago: mensalidade.valorPrevisto,
+          dataPagamento: mensalidade.dataVencimento,
+          formaPagamento: "pix",
+        },
+      });
+    }
   }
-  console.log("✓ pagamentos de administrador dos últimos 3 meses\n");
+  console.log("✓ mensalidades de administrador calculadas (últimos meses fechados)\n");
 
   console.log("Seed concluído com sucesso!");
 }

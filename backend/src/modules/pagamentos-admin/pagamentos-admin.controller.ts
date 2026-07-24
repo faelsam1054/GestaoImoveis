@@ -2,10 +2,9 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { paramId } from "../../utils/params";
 import * as service from "./pagamentos-admin.service";
 import {
-  criarPagamentoAdminSchema,
-  atualizarPagamentoAdminSchema,
   marcarPagoAdminSchema,
   listarPagamentosAdminQuerySchema,
+  calcularPagamentoAdminParamsSchema,
 } from "./pagamentos-admin.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 
@@ -20,34 +19,20 @@ export const detalhar = asyncHandler(async (req, res) => {
   res.json(pagamento);
 });
 
-export const criar = asyncHandler(async (req, res) => {
-  const data = criarPagamentoAdminSchema.parse(req.body);
-  const pagamento = await service.criar(data);
-  await registrarAuditoria({
-    usuarioId: req.user!.id,
-    acao: "CREATE_PAGAMENTO_ADMIN",
-    entidade: "PagamentoAdministrador",
-    entidadeId: pagamento.id,
-    dadosDepois: pagamento,
-    ip: getClientIp(req),
-  });
-  res.status(201).json(pagamento);
-});
-
-export const atualizar = asyncHandler(async (req, res) => {
-  const data = atualizarPagamentoAdminSchema.parse(req.body);
-  const antes = await service.buscarPorIdOuFalhar(paramId(req));
-  const pagamento = await service.atualizar(paramId(req), data);
-  await registrarAuditoria({
-    usuarioId: req.user!.id,
-    acao: "UPDATE_PAGAMENTO_ADMIN",
-    entidade: "PagamentoAdministrador",
-    entidadeId: pagamento.id,
-    dadosAntes: antes,
-    dadosDepois: pagamento,
-    ip: getClientIp(req),
-  });
-  res.json(pagamento);
+export const calcular = asyncHandler(async (req, res) => {
+  const { administradorId, mesReferencia } = calcularPagamentoAdminParamsSchema.parse(req.params);
+  const resultado = await service.calcular(administradorId, mesReferencia);
+  if (resultado.existente && resultado.criadoAgora) {
+    await registrarAuditoria({
+      usuarioId: req.user!.id,
+      acao: "CALCULAR_PAGAMENTO_ADMIN",
+      entidade: "PagamentoAdministrador",
+      entidadeId: resultado.registro.id,
+      dadosDepois: resultado.registro,
+      ip: getClientIp(req),
+    });
+  }
+  res.json(resultado);
 });
 
 export const marcarComoPago = asyncHandler(async (req, res) => {
@@ -56,6 +41,19 @@ export const marcarComoPago = asyncHandler(async (req, res) => {
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "REGISTRAR_PAGAMENTO_ADMIN",
+    entidade: "PagamentoAdministrador",
+    entidadeId: pagamento.id,
+    dadosDepois: pagamento,
+    ip: getClientIp(req),
+  });
+  res.json(pagamento);
+});
+
+export const desfazerPagamento = asyncHandler(async (req, res) => {
+  const pagamento = await service.desfazerPagamento(paramId(req));
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "DESFAZER_PAGAMENTO_ADMIN",
     entidade: "PagamentoAdministrador",
     entidadeId: pagamento.id,
     dadosDepois: pagamento,

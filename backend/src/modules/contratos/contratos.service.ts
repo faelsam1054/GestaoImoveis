@@ -16,7 +16,6 @@ interface FiltrosContrato {
   page?: string;
   pageSize?: string;
   imovelIdsPermitidos?: string[] | null;
-  ativoFiltro?: "ativos" | "todos" | "inativos";
 }
 
 const includePadrao = {
@@ -169,13 +168,10 @@ export async function listar(filtros: FiltrosContrato) {
 
   const where: Prisma.ContratoWhereInput = {
     // Contratos pendentes de aprovacao (ou rejeitados) nunca aparecem na
-    // listagem padrao - so na tela dedicada "Contratos Pendentes".
-    statusAprovacao: "aprovado",
-    // Eixo de visibilidade (nao confundir com o campo "status"): por padrao
-    // so mostra ativo=true; "todos"/"inativos" sao pedidos explicitamente
-    // pelo filtro Ativos/Todos/Inativos da tela.
-    ativo: filtros.ativoFiltro === "todos" ? undefined : filtros.ativoFiltro !== "inativos",
-    status: filtros.status,
+    // listagem geral - so na tela dedicada "Contratos Pendentes". Isso vale
+    // mesmo que filtros.status peca por eles (ver listarContratosQuerySchema,
+    // que ja restringe os valores aceitos aqui a "ativo"/"encerrado").
+    status: filtros.status ?? { in: ["ativo", "encerrado"] },
     imovelId: combinarFiltroImovel(filtros.imovelId, filtros.imovelIdsPermitidos ?? null),
     inquilinoId: filtros.inquilinoId,
   };
@@ -271,8 +267,7 @@ export async function criar(data: z.infer<typeof criarContratoSchema>, criador: 
         valorAluguel: data.valorAluguel,
         valorCaucao: data.valorCaucao,
         caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
-        status: "ativo",
-        statusAprovacao: "pendente_aprovacao",
+        status: "pendente_aprovacao",
         criadoPorId: criador.id,
       },
       include: includePadrao,
@@ -294,7 +289,6 @@ export async function criar(data: z.infer<typeof criarContratoSchema>, criador: 
         valorCaucao: data.valorCaucao,
         caucaoNumeroParcelas: data.caucaoNumeroParcelas ?? 1,
         status: "ativo",
-        statusAprovacao: "aprovado",
         criadoPorId: criador.id,
         dataAprovacao: new Date(),
       },
@@ -313,7 +307,7 @@ export async function criar(data: z.infer<typeof criarContratoSchema>, criador: 
 
 export async function listarPendentesAprovacao() {
   return prisma.contrato.findMany({
-    where: { statusAprovacao: "pendente_aprovacao" },
+    where: { status: "pendente_aprovacao" },
     include: { ...includePadrao, criadoPor: { select: { nome: true, email: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -322,7 +316,7 @@ export async function listarPendentesAprovacao() {
 export async function aprovar(id: string, aprovadorId: string) {
   const contrato = await prisma.contrato.findUnique({ where: { id }, include: { imovel: true } });
   if (!contrato) throw new AppError("Contrato nao encontrado", 404);
-  if (contrato.statusAprovacao !== "pendente_aprovacao") {
+  if (contrato.status !== "pendente_aprovacao") {
     throw new AppError("Este contrato nao esta pendente de aprovacao", 409);
   }
   if (contrato.imovel.status === "alugado") {
@@ -345,7 +339,7 @@ export async function aprovar(id: string, aprovadorId: string) {
 
     return tx.contrato.update({
       where: { id },
-      data: { statusAprovacao: "aprovado", dataAprovacao: new Date(), aprovadoPorId: aprovadorId },
+      data: { status: "ativo", dataAprovacao: new Date(), aprovadoPorId: aprovadorId },
       include: includePadrao,
     });
   });
@@ -357,13 +351,13 @@ export async function aprovar(id: string, aprovadorId: string) {
 export async function rejeitar(id: string, motivoRejeicao: string) {
   const contrato = await prisma.contrato.findUnique({ where: { id } });
   if (!contrato) throw new AppError("Contrato nao encontrado", 404);
-  if (contrato.statusAprovacao !== "pendente_aprovacao") {
+  if (contrato.status !== "pendente_aprovacao") {
     throw new AppError("Este contrato nao esta pendente de aprovacao", 409);
   }
 
   return prisma.contrato.update({
     where: { id },
-    data: { statusAprovacao: "rejeitado", motivoRejeicao, dataRejeicao: new Date() },
+    data: { status: "rejeitado", motivoRejeicao, dataRejeicao: new Date() },
     include: includePadrao,
   });
 }
@@ -388,19 +382,6 @@ export async function encerrar(id: string) {
   });
 }
 
-export async function rescindir(id: string) {
-  const contrato = await buscarPorIdOuFalhar(id);
-  if (contrato.status !== "ativo") {
-    throw new AppError("Somente contratos ativos podem ser rescindidos", 409);
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const atualizado = await tx.contrato.update({ where: { id }, data: { status: "rescindido" } });
-    await liberarImovelSeSemContratoAtivo(tx, contrato.imovelId);
-    return atualizado;
-  });
-}
-
 export async function renovar(id: string, data: z.infer<typeof renovarContratoSchema>) {
   const contratoAtual = await buscarPorIdOuFalhar(id);
   if (contratoAtual.status !== "ativo") {
@@ -408,7 +389,9 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
   }
 
   const novoContratoCriado = await prisma.$transaction(async (tx) => {
-    await tx.contrato.update({ where: { id }, data: { status: "renovado" } });
+    // Renovar equivale a encerrar o contrato atual e comecar um novo
+    // (nao ha mais um status "renovado" distinto - ver AJUSTE 1 do polimento).
+    await tx.contrato.update({ where: { id }, data: { status: "encerrado" } });
 
     const novoContrato = await tx.contrato.create({
       data: {
@@ -446,26 +429,6 @@ export async function removerContratoAssinado(id: string) {
   return prisma.contrato.update({ where: { id }, data: { contratoAssinadoUrl: null }, include: includePadrao });
 }
 
-// Visibilidade (nao confundir com status="ativo"/"encerrado"/etc): apenas
-// esconde/mostra da listagem padrao, sem tocar no ciclo de vida do contrato.
-export async function desativar(id: string) {
-  await buscarPorIdOuFalhar(id);
-  return prisma.contrato.update({
-    where: { id },
-    data: { ativo: false, desativadoEm: new Date() },
-    include: includePadrao,
-  });
-}
-
-export async function reativar(id: string) {
-  await buscarPorIdOuFalhar(id);
-  return prisma.contrato.update({
-    where: { id },
-    data: { ativo: true, desativadoEm: null },
-    include: includePadrao,
-  });
-}
-
 // Hard delete: so permitido se o contrato nao tiver nenhum historico
 // financeiro (pagamentos ou parcelas de caucao) nem tiver sido renovado -
 // na pratica, isso restringe a contratos pendente_aprovacao/rejeitado, ja
@@ -481,7 +444,7 @@ export async function excluir(id: string) {
 
   if (pagamentos + caucaoParcelas > 0) {
     throw new AppError(
-      "Este contrato possui pagamentos ou parcelas de caução vinculados e não pode ser excluído definitivamente. Desative-o em vez disso.",
+      "Este contrato possui pagamentos ou parcelas de caução vinculados e não pode ser excluído definitivamente.",
       409,
     );
   }

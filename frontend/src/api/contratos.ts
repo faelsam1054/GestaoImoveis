@@ -18,7 +18,6 @@ export interface FiltrosContrato {
   status?: StatusContrato;
   imovelId?: string;
   inquilinoId?: string;
-  ativoFiltro?: "ativos" | "todos" | "inativos";
 }
 
 export async function listarContratos(filtros: FiltrosContrato = {}): Promise<Paginado<Contrato>> {
@@ -38,11 +37,6 @@ export async function criarContrato(input: ContratoInput): Promise<Contrato> {
 
 export async function encerrarContrato(id: string): Promise<Contrato> {
   const { data } = await api.patch(`/contratos/${id}/encerrar`);
-  return data;
-}
-
-export async function rescindirContrato(id: string): Promise<Contrato> {
-  const { data } = await api.patch(`/contratos/${id}/rescindir`);
   return data;
 }
 
@@ -77,16 +71,6 @@ export async function aprovarContrato(id: string): Promise<Contrato> {
 
 export async function rejeitarContrato(id: string, motivoRejeicao: string): Promise<Contrato> {
   const { data } = await api.post(`/contratos/${id}/rejeitar`, { motivoRejeicao });
-  return data;
-}
-
-export async function desativarContrato(id: string): Promise<Contrato> {
-  const { data } = await api.patch(`/contratos/${id}/desativar`);
-  return data;
-}
-
-export async function reativarContrato(id: string): Promise<Contrato> {
-  const { data } = await api.patch(`/contratos/${id}/reativar`);
   return data;
 }
 

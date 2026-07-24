@@ -10,9 +10,10 @@ const router = Router();
 router.use(authenticate, requireRole("proprietario"));
 
 router.get("/", controller.listar);
+// Precisa vir antes de "/:id" - senao "calcular" seria capturado como um :id.
+router.get("/calcular/:administradorId/:mesReferencia", controller.calcular);
 router.get("/:id", controller.detalhar);
-router.post("/", controller.criar);
-router.put("/:id", controller.atualizar);
 router.patch("/:id/pagar", controller.marcarComoPago);
+router.post("/:id/desfazer-pagamento", controller.desfazerPagamento);
 
 export default router;

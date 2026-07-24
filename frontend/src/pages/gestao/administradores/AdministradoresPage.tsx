@@ -319,9 +319,11 @@ export function AdministradoresPage() {
                             <ShieldCheck className="h-4 w-4" />
                             Permissões
                           </Button>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
-                          </Button>
+                          {administrador.ativo && (
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
+                            </Button>
+                          )}
                           <Button variant="ghost" size="sm" onClick={() => setResetando(administrador)}>
                             Resetar senha
                           </Button>
@@ -391,9 +393,11 @@ export function AdministradoresPage() {
                       <ShieldCheck className="h-4 w-4" />
                       Permissões
                     </Button>
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
-                    </Button>
+                    {administrador.ativo && (
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/pagamentos-admin?administradorId=${administrador.id}`}>Mensalidades</Link>
+                      </Button>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => setResetando(administrador)}>
                       Resetar senha
                     </Button>

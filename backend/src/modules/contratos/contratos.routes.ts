@@ -23,7 +23,6 @@ router.post("/", authorizePermissao("podeEditarContratos"), controller.criar);
 router.post("/:id/aprovar", requireRole("proprietario"), controller.aprovar);
 router.post("/:id/rejeitar", requireRole("proprietario"), controller.rejeitar);
 router.patch("/:id/encerrar", authorizePermissao("podeEditarContratos"), controller.encerrar);
-router.patch("/:id/rescindir", authorizePermissao("podeEditarContratos"), controller.rescindir);
 router.post("/:id/renovar", authorizePermissao("podeEditarContratos"), controller.renovar);
 router.post(
   "/:id/contrato-assinado",
@@ -33,8 +32,6 @@ router.post(
 );
 router.delete("/:id/contrato-assinado", authorizePermissao("podeEditarContratos"), controller.removerContratoAssinado);
 
-router.patch("/:id/desativar", authorizePermissao("podeEditarContratos"), controller.desativar);
-router.patch("/:id/reativar", authorizePermissao("podeEditarContratos"), controller.reativar);
 router.delete("/:id", authorizePermissao("podeEditarContratos"), controller.excluir);
 
 router.get("/:id/aditivos", authorizePermissao("podeVerContratos"), controller.listarAditivos);
