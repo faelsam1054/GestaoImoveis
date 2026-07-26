@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useAutoAnimate } from "@formkit/auto-animate/react"
 
 import { cn } from "@/lib/utils"
 
@@ -28,8 +29,12 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
 }
 
 function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
+  // Linhas entram/saem/reordenam com uma transicao suave (fade + FLIP) sempre
+  // que a lista de dados muda - sem precisar de stagger manual por pagina.
+  const [parentRef] = useAutoAnimate<HTMLTableSectionElement>();
   return (
     <tbody
+      ref={parentRef}
       data-slot="table-body"
       className={cn("[&_tr:last-child]:border-0", className)}
       {...props}

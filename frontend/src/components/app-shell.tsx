@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
-import { Menu, LogOut, Home, UserRound, Moon, Sun } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Menu, LogOut, Home, UserRound, Moon, Sun, ArrowUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useContratosPendentesCount } from "@/hooks/use-contratos-pendentes-count";
+import { pageTransition } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -132,6 +134,23 @@ interface AppShellProps {
 export function AppShell({ titulo, itensNav }: AppShellProps) {
   const { usuario, logout } = useAuth();
   const [menuAberto, setMenuAberto] = useState(false);
+  const [mostrarTopo, setMostrarTopo] = useState(false);
+  const location = useLocation();
+
+  // O scroll da pagina acontece na janela (o layout usa min-h-screen, entao
+  // <main> cresce com o conteudo em vez de clipar internamente) - por isso o
+  // listener e o scrollTo sao no window, nao numa ref do <main>.
+  useEffect(() => {
+    function aoRolar() {
+      setMostrarTopo(window.scrollY > 500);
+    }
+    window.addEventListener("scroll", aoRolar);
+    return () => window.removeEventListener("scroll", aoRolar);
+  }, []);
+
+  function voltarAoTopo() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   if (!usuario) return null;
 
@@ -142,9 +161,14 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white dark:bg-indigo-500">
             <Home className="h-[18px] w-[18px]" />
           </div>
-          <span className="truncate font-heading text-sm font-semibold text-slate-900 md:hidden lg:inline dark:text-white">
-            Gestão de Aluguéis
-          </span>
+          <div className="min-w-0 md:hidden lg:block">
+            <span className="block truncate font-heading text-sm font-semibold text-slate-900 dark:text-white">
+              Gestalugua
+            </span>
+            <span className="block text-[11px] leading-tight text-slate-500 dark:text-slate-400">
+              Sua carteira de aluguéis organizada
+            </span>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto py-4">
           <NavLista itens={itensNav} comTooltip />
@@ -203,7 +227,7 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white dark:bg-indigo-500">
                     <Home className="h-[18px] w-[18px]" />
                   </div>
-                  Gestão de Aluguéis
+                  Gestalugua
                 </SheetTitle>
                 <div className="py-4">
                   <NavLista itens={itensNav} onNavigate={() => setMenuAberto(false)} />
@@ -248,8 +272,37 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <Outlet />
+        <main className="relative flex-1 p-4 sm:p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={location.pathname}
+              variants={pageTransition}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {mostrarTopo && (
+              <motion.button
+                type="button"
+                onClick={voltarAoTopo}
+                aria-label="Voltar ao topo"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.2 }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="fixed bottom-6 left-6 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90"
+              >
+                <ArrowUp className="h-5 w-5" />
+              </motion.button>
+            )}
+          </AnimatePresence>
         </main>
       </div>
     </div>

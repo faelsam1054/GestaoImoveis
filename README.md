@@ -1,15 +1,27 @@
-# Gestão de Aluguéis
+# Gestalugua - Sistema de Gestão de Aluguéis
 
-Sistema web multiusuário para controle de aluguéis de imóveis, com três perfis de
-acesso — **Proprietário**, **Administrador** e **Inquilino** — permissões
-granulares, controle financeiro completo, geração de PDFs (recibos e contratos),
-dashboard e relatórios exportáveis.
+Sua carteira de aluguéis organizada.
+
+> Este projeto é conhecido internamente como GestaoImoveis (nome do repositório).
+
+## Sobre
+
+O Gestalugua é um sistema web multiusuário para controle de aluguéis de imóveis,
+indicado para proprietários que administram um portfólio de imóveis (diretamente
+ou com apoio de administradores). Principais funcionalidades:
+
+- Três perfis de acesso — **Proprietário**, **Administrador** e **Inquilino** —
+  com permissões granulares por administrador.
+- Controle financeiro completo: contratos, pagamentos, cauções, multas e
+  lançamentos avulsos.
+- Geração de PDFs (recibos e contratos).
+- Dashboard e relatórios exportáveis.
 
 ## Stack
 
 | Camada | Tecnologias |
 |---|---|
-| Backend | Node.js, Express 5, TypeScript, Prisma ORM, SQLite |
+| Backend | Node.js, Express 5, TypeScript, Prisma ORM, PostgreSQL (Supabase) |
 | Autenticação | JWT (access + refresh token), bcrypt, rate limiting |
 | PDF | pdfkit (geração), react-pdf (pré-visualização no frontend) |
 | Email | nodemailer (mockado por padrão via `EMAIL_MOCK`, ver "Variáveis de ambiente") |

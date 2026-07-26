@@ -10,5 +10,5 @@ export function GestaoLayout() {
 
   const itensNav = navItensLiberados(NAV_GESTAO, usuario);
 
-  return <AppShell titulo="Gestão de Aluguéis" itensNav={itensNav} />;
+  return <AppShell titulo="Gestalugua" itensNav={itensNav} />;
 }

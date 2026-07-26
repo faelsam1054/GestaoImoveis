@@ -153,8 +153,82 @@
     }
   body {
     @apply bg-background text-foreground;
+    transition: background-color 200ms ease-out, color 200ms ease-out;
     }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
+    }
+  :focus-visible {
+    animation: focus-pulse 400ms ease-out;
+    }
+  button:not(:disabled), [role="tab"], [role="switch"], [role="checkbox"], [role="menuitem"], [role="option"] {
+    cursor: pointer;
+    }
+  button:disabled {
+    cursor: not-allowed;
+    }
+}
+
+@keyframes focus-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--ring);
+    }
+  100% {
+    box-shadow: 0 0 0 6px transparent;
+    }
+}
+
+/* Borda pulsante sutil para itens em atraso (ex: lista de pagamentos
+   atrasados no dashboard) - reforca visualmente o estado "critico". */
+@keyframes pulse-border-destructive {
+  0%, 100% {
+    border-color: color-mix(in oklch, var(--destructive), transparent 70%);
+    }
+  50% {
+    border-color: color-mix(in oklch, var(--destructive), transparent 20%);
+    }
+}
+
+/* Barra de progresso do auto-dismiss dos toasts (sonner). A duracao (4s)
+   acompanha o default de duration do sonner - se algum toast no futuro
+   passar um duration diferente, a barra deixa de bater certinho. */
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+    }
+  to {
+    transform: scaleX(0);
+    }
+}
+
+.cn-toast {
+  position: relative;
+  overflow: hidden;
+}
+
+.cn-toast::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--primary);
+  opacity: 0.4;
+  transform-origin: left;
+  animation: toast-progress 4s linear forwards;
+}
+
+/* Usuarios que pedem menos movimento no SO: reduz toda animacao/transicao a
+   praticamente zero, incluindo as do framer-motion (que renderiza como CSS
+   transitions/animations por baixo) e as do tw-animate-css. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
     }
 }

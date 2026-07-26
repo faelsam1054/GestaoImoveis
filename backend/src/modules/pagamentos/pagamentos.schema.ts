@@ -31,6 +31,11 @@ export const listarPagamentosQuerySchema = z.object({
   status: z.enum(STATUS_PAGAMENTO).optional(),
   contratoId: z.string().optional(),
   competencia: z.string().optional(),
+  imovelId: z.string().optional(),
+  dataInicio: z.coerce.date().optional(),
+  dataFim: z.coerce.date().optional(),
+  ordenarPor: z.enum(["dataVencimento", "valor"]).optional(),
+  ordem: z.enum(["asc", "desc"]).optional(),
   page: z.string().optional(),
   pageSize: z.string().optional(),
 });

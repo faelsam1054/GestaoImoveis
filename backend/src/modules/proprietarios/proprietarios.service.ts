@@ -25,11 +25,11 @@ async function notificarNovoProprietario(email: string, nome: string, senhaTempo
   try {
     await enviarEmail({
       destinatario: email,
-      assunto: "[Sistema de Aluguéis] Acesso criado - Proprietário",
+      assunto: "[Gestalugua] Acesso criado - Proprietário",
       corpo: [
         `Olá, ${nome}.`,
         "",
-        "Uma conta de Proprietário foi criada para você no Sistema de Aluguéis, com acesso total.",
+        "Uma conta de Proprietário foi criada para você no Gestalugua, com acesso total.",
         `Email: ${email}`,
         `Senha temporária: ${senhaTemporaria}`,
         "",

@@ -21,6 +21,11 @@ export interface FiltrosPagamento {
   status?: StatusPagamento;
   contratoId?: string;
   competencia?: string;
+  imovelId?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  ordenarPor?: "dataVencimento" | "valor";
+  ordem?: "asc" | "desc";
   pageSize?: number;
 }
 

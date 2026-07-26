@@ -16,6 +16,11 @@ interface FiltrosPagamento {
   status?: string;
   contratoId?: string;
   competencia?: string;
+  imovelId?: string;
+  dataInicio?: Date;
+  dataFim?: Date;
+  ordenarPor?: "dataVencimento" | "valor";
+  ordem?: "asc" | "desc";
   page?: string;
   pageSize?: string;
   imovelIdsPermitidos?: string[] | null;
@@ -44,18 +49,44 @@ export async function listar(filtros: FiltrosPagamento) {
   await atualizarAtrasados();
   const paginacao = parsePaginacao(filtros);
 
+  const contratoClausulas: Prisma.ContratoWhereInput[] = [];
+  if (filtros.imovelIdsPermitidos) contratoClausulas.push({ imovelId: { in: filtros.imovelIdsPermitidos } });
+  if (filtros.imovelId) contratoClausulas.push({ imovelId: filtros.imovelId });
+
+  // Periodo cobre vencimento OU pagamento (so quando ja pago) - permite achar
+  // tanto "o que vencia em janeiro" quanto "o que foi pago em janeiro".
+  let periodoWhere: Prisma.PagamentoWhereInput | undefined;
+  if (filtros.dataInicio || filtros.dataFim) {
+    const fimExclusivo = filtros.dataFim
+      ? new Date(filtros.dataFim.getTime() + 24 * 60 * 60 * 1000)
+      : undefined;
+    const range: Prisma.DateTimeFilter = {};
+    if (filtros.dataInicio) range.gte = filtros.dataInicio;
+    if (fimExclusivo) range.lt = fimExclusivo;
+
+    periodoWhere = {
+      OR: [{ dataVencimento: range }, { status: "pago", dataPagamento: range }],
+    };
+  }
+
   const where: Prisma.PagamentoWhereInput = {
     status: filtros.status,
     contratoId: filtros.contratoId,
     competencia: filtros.competencia,
-    contrato: filtros.imovelIdsPermitidos ? { imovelId: { in: filtros.imovelIdsPermitidos } } : undefined,
+    contrato: contratoClausulas.length > 0 ? { AND: contratoClausulas } : undefined,
+    AND: periodoWhere,
   };
+
+  // "valor" ordena pelo valor previsto (o valor pago so existe apos a
+  // quitacao, e o previsto e o que da a ordenacao mais estavel/comparavel).
+  const campoOrdenacao = filtros.ordenarPor === "valor" ? "valorPrevisto" : "dataVencimento";
+  const ordem = filtros.ordem ?? "asc";
 
   const [dados, total] = await Promise.all([
     prisma.pagamento.findMany({
       where,
       include: includePadrao,
-      orderBy: { dataVencimento: "asc" },
+      orderBy: { [campoOrdenacao]: ordem },
       skip: paginacao.skip,
       take: paginacao.take,
     }),

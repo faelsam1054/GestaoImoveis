@@ -519,7 +519,7 @@ async function main() {
     create: {
       id: "seed-email-1",
       destinatario: "admin@sistema.com",
-      assunto: "[Sistema de Aluguéis] Novo contrato aguardando aprovação",
+      assunto: "[Gestalugua] Novo contrato aguardando aprovação",
       corpo:
         "Um novo contrato foi cadastrado por um Administrador e aguarda sua aprovação.\n\n" +
         "Imóvel: Rua Bela Vista, 88\nInquilino: Pedro Lima\nValor do aluguel: R$ 1600.00\n\n" +
