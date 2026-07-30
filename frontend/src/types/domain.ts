@@ -111,6 +111,7 @@ export interface Contrato {
   contratoAnteriorId: string | null;
   arquivoPdfUrl: string | null;
   contratoAssinadoUrl: string | null;
+  quebraContratoUrl: string | null;
   pagamentos?: Pagamento[];
   caucaoParcelas?: CaucaoParcela[];
 }
@@ -165,6 +166,10 @@ export interface Pagamento {
   formaPagamento: FormaPagamento | null;
   observacoes: string | null;
   recibo?: { id: string; caminhoArquivo: string } | null;
+  comprovanteUrl: string | null;
+  comprovanteNomeOriginal: string | null;
+  comprovanteTamanho: number | null;
+  comprovanteUploadEm: string | null;
 }
 
 export interface GastoManutencao {
@@ -255,5 +260,18 @@ export interface LogAuditoria {
   dadosAntes: unknown;
   dadosDepois: unknown;
   ip: string | null;
+  createdAt: string;
+}
+
+export interface Notificacao {
+  id: string;
+  usuarioId: string;
+  tipo: string;
+  titulo: string;
+  mensagem: string;
+  entidade: string | null;
+  entidadeId: string | null;
+  lida: boolean;
+  lidaEm: string | null;
   createdAt: string;
 }

@@ -49,6 +49,8 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -62,6 +64,17 @@ function DialogContent({
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:duration-250 data-open:ease-[cubic-bezier(0.34,1.56,0.64,1)] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:duration-150 data-closed:ease-out",
           className
         )}
+        // Clicar fora ou apertar ESC nao fecha o modal por padrao - evita
+        // perda acidental de dados em formularios (o X e o "Cancelar"
+        // continuam fechando normalmente, nao passam por aqui).
+        onInteractOutside={(e) => {
+          e.preventDefault()
+          onInteractOutside?.(e)
+        }}
+        onEscapeKeyDown={(e) => {
+          e.preventDefault()
+          onEscapeKeyDown?.(e)
+        }}
         {...props}
       >
         {children}

@@ -1,15 +1,29 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { DateRange } from "react-day-picker";
 import { format } from "date-fns";
-import { Plus, Wallet, Undo2, Building2, ArrowUpNarrowWide, ArrowDownWideNarrow, SlidersHorizontal, X } from "lucide-react";
+import {
+  Plus,
+  Wallet,
+  Undo2,
+  Building2,
+  ArrowUpNarrowWide,
+  ArrowDownWideNarrow,
+  SlidersHorizontal,
+  X,
+  Paperclip,
+  ImageIcon,
+  FileText,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   listarPagamentos,
   criarPagamentoAvulso,
   marcarPagamentoComoPago,
   desfazerPagamento,
+  anexarComprovantePagamento,
+  baixarComprovantePagamento,
   type FiltrosPagamento,
   type PagamentoAvulsoInput,
   type MarcarPagoInput,
@@ -31,6 +45,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -99,6 +114,20 @@ export function PagamentosPage() {
     formaPagamento: "pix",
     observacoes: "",
   });
+  const [anexarComprovante, setAnexarComprovante] = useState(false);
+  const [arquivoComprovante, setArquivoComprovante] = useState<File | null>(null);
+  const [erroComprovante, setErroComprovante] = useState<string | null>(null);
+  const inputComprovanteRef = useRef<HTMLInputElement>(null);
+
+  const previewComprovanteUrl = useMemo(
+    () => (arquivoComprovante?.type.startsWith("image/") ? URL.createObjectURL(arquivoComprovante) : null),
+    [arquivoComprovante],
+  );
+  useEffect(() => {
+    return () => {
+      if (previewComprovanteUrl) URL.revokeObjectURL(previewComprovanteUrl);
+    };
+  }, [previewComprovanteUrl]);
 
   const [desfazendo, setDesfazendo] = useState<Pagamento | null>(null);
   const [removerRecibo, setRemoverRecibo] = useState(true);
@@ -179,10 +208,21 @@ export function PagamentosPage() {
 
   const mutPagar = useMutation({
     mutationFn: ({ id, input }: { id: string; input: MarcarPagoInput }) => marcarPagamentoComoPago(id, input),
-    onSuccess: async () => {
+    onSuccess: async (pagamento) => {
       toast.success("Pagamento registrado.");
+      if (arquivoComprovante) {
+        try {
+          await anexarComprovantePagamento(pagamento.id, arquivoComprovante);
+          toast.success("Comprovante anexado.");
+        } catch (err) {
+          toast.error(`O pagamento foi registrado, mas houve um erro ao anexar o comprovante: ${mensagemErro(err)}`);
+        }
+      }
       await invalidar();
       setPagando(null);
+      setAnexarComprovante(false);
+      setArquivoComprovante(null);
+      setErroComprovante(null);
     },
     onError: (err) => setErro(mensagemErro(err)),
   });
@@ -208,6 +248,38 @@ export function PagamentosPage() {
     setPagando(pagamento);
     setFormPagar({ valorPago: pagamento.valorPrevisto, formaPagamento: "pix", observacoes: "" });
     setErro(null);
+    setAnexarComprovante(false);
+    setArquivoComprovante(null);
+    setErroComprovante(null);
+  }
+
+  function selecionarComprovante(e: ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0] ?? null;
+    const tiposAceitos = ["application/pdf", "image/jpeg", "image/png"];
+    if (arquivo) {
+      if (!tiposAceitos.includes(arquivo.type)) {
+        setErroComprovante("Envie um PDF, JPG ou PNG.");
+        setArquivoComprovante(null);
+        e.target.value = "";
+        return;
+      }
+      if (arquivo.size > 10 * 1024 * 1024) {
+        setErroComprovante("O arquivo deve ter no máximo 10MB.");
+        setArquivoComprovante(null);
+        e.target.value = "";
+        return;
+      }
+    }
+    setErroComprovante(null);
+    setArquivoComprovante(arquivo);
+  }
+
+  async function baixarComprovante(pagamento: Pagamento) {
+    try {
+      await baixarComprovantePagamento(pagamento.id, pagamento.comprovanteNomeOriginal ?? "comprovante");
+    } catch (err) {
+      toast.error(mensagemErro(err));
+    }
   }
 
   function abrirDesfazer(pagamento: Pagamento) {
@@ -421,6 +493,16 @@ export function PagamentosPage() {
                           </a>
                         </Button>
                       )}
+                      {pagamento.comprovanteUrl && (
+                        <Button variant="ghost" size="sm" onClick={() => baixarComprovante(pagamento)}>
+                          {pagamento.comprovanteNomeOriginal?.match(/\.(jpe?g|png)$/i) ? (
+                            <ImageIcon className="h-4 w-4" />
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                          Comprovante
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -472,6 +554,16 @@ export function PagamentosPage() {
                       <a href={pagamento.recibo.caminhoArquivo} target="_blank" rel="noreferrer">
                         Recibo
                       </a>
+                    </Button>
+                  )}
+                  {pagamento.comprovanteUrl && (
+                    <Button variant="ghost" size="sm" onClick={() => baixarComprovante(pagamento)}>
+                      {pagamento.comprovanteNomeOriginal?.match(/\.(jpe?g|png)$/i) ? (
+                        <ImageIcon className="h-4 w-4" />
+                      ) : (
+                        <FileText className="h-4 w-4" />
+                      )}
+                      Comprovante
                     </Button>
                   )}
                 </MobileRowActions>
@@ -627,6 +719,76 @@ export function PagamentosPage() {
                 value={formPagar.observacoes}
                 onChange={(e) => setFormPagar({ ...formPagar, observacoes: e.target.value })}
               />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Deseja anexar comprovante de pagamento?</Label>
+              <RadioGroup
+                value={anexarComprovante ? "sim" : "nao"}
+                onValueChange={(v) => {
+                  setAnexarComprovante(v === "sim");
+                  if (v === "nao") {
+                    setArquivoComprovante(null);
+                    setErroComprovante(null);
+                  }
+                }}
+                className="flex gap-5"
+              >
+                <label className="flex items-center gap-2 text-sm">
+                  <RadioGroupItem value="nao" />
+                  Não
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <RadioGroupItem value="sim" />
+                  Sim
+                </label>
+              </RadioGroup>
+              {anexarComprovante && (
+                <div className="mt-1 flex flex-col gap-2 rounded-lg border p-2.5">
+                  <input
+                    ref={inputComprovanteRef}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png"
+                    className="hidden"
+                    onChange={selecionarComprovante}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => inputComprovanteRef.current?.click()}
+                    >
+                      <Paperclip className="h-4 w-4" />
+                      {arquivoComprovante ? "Trocar arquivo" : "Selecionar arquivo"}
+                    </Button>
+                    {arquivoComprovante && (
+                      <>
+                        <span className="truncate text-sm text-muted-foreground">{arquivoComprovante.name}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => {
+                            setArquivoComprovante(null);
+                            if (inputComprovanteRef.current) inputComprovanteRef.current.value = "";
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {previewComprovanteUrl && (
+                    <img
+                      src={previewComprovanteUrl}
+                      alt="Pré-visualização do comprovante"
+                      className="max-h-40 rounded-md border object-contain"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">PDF, JPG ou PNG. Máx. 10MB.</p>
+                  {erroComprovante && <p className="text-xs text-destructive">{erroComprovante}</p>}
+                </div>
+              )}
             </div>
             {erro && <p className="text-sm text-destructive">{erro}</p>}
           </div>

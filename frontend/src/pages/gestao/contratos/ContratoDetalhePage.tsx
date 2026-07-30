@@ -276,6 +276,21 @@ export function ContratoDetalhePage() {
         </CardContent>
       </Card>
 
+      {contrato.quebraContratoUrl && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Quebra de contrato (PDF)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" asChild>
+              <a href={contrato.quebraContratoUrl} target="_blank" rel="noreferrer">
+                Baixar Quebra de Contrato
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {Boolean(contrato.valorCaucao) && (
         <Card>
           <CardHeader>

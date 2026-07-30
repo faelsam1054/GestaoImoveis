@@ -9,7 +9,7 @@ import {
   rejeitarContratoSchema,
 } from "./contratos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
-import { enviarArquivo } from "../../lib/storage";
+import { enviarArquivo, baixarArquivo } from "../../lib/storage";
 import { obterImovelIdsPermitidos, verificarAcessoAoImovel } from "../administradores/acesso-imovel.service";
 import * as aditivosService from "../aditivos/aditivos.service";
 import { criarAditivoSchema } from "../aditivos/aditivos.schema";
@@ -31,6 +31,23 @@ export const detalhar = asyncHandler(async (req, res) => {
   const contrato = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, contrato.imovelId);
   res.json(contrato);
+});
+
+// Preview/download do PDF gerado automaticamente do contrato (arquivoPdfUrl)
+// - usado na tela de Contratos Pendentes, pro Proprietario avaliar o
+// documento antes de aprovar/rejeitar. Permissao mais restrita que o resto
+// do modulo: so o Proprietario e o Administrador que cadastrou o contrato
+// (nao qualquer admin vinculado ao imovel).
+export const baixarArquivoContrato = asyncHandler(async (req, res) => {
+  const contrato = await service.buscarPorIdOuFalhar(paramId(req));
+  const podeAcessar = req.user!.role === "proprietario" || contrato.criadoPorId === req.user!.id;
+  if (!podeAcessar) throw new AppError("Voce nao tem acesso a este documento", 403);
+  if (!contrato.arquivoPdfUrl) throw new AppError("Este contrato nao possui PDF gerado", 404);
+
+  const { buffer, contentType } = await baixarArquivo(contrato.arquivoPdfUrl);
+  res.setHeader("Content-Type", contentType ?? "application/pdf");
+  res.setHeader("Content-Disposition", 'inline; filename="contrato.pdf"');
+  res.send(buffer);
 });
 
 export const criar = asyncHandler(async (req, res) => {
@@ -82,18 +99,31 @@ export const rejeitar = asyncHandler(async (req, res) => {
 export const encerrar = asyncHandler(async (req, res) => {
   const existente = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, existente.imovelId);
-  const contrato = await service.encerrar(paramId(req));
+
+  // Anexo opcional de PDF de quebra de contrato - so faz sentido no momento
+  // do encerramento em si (nao ha rota separada pra anexar isso depois).
+  let quebraContratoUrl: string | undefined;
+  if (req.file) {
+    const { url } = await enviarArquivo("contratos", req.file.buffer, req.file.originalname, req.file.mimetype);
+    quebraContratoUrl = url;
+  }
+
+  const contrato = await service.encerrar(paramId(req), quebraContratoUrl);
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "ENCERRAR_CONTRATO",
     entidade: "Contrato",
     entidadeId: contrato.id,
+    dadosDepois: quebraContratoUrl ? { quebraContratoUrl } : undefined,
     ip: getClientIp(req),
   });
   res.json(contrato);
 });
 
 export const renovar = asyncHandler(async (req, res) => {
+  if (req.user!.role !== "proprietario") {
+    throw new AppError("Apenas o Proprietário pode alterar valores contratuais", 403);
+  }
   const existente = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, existente.imovelId);
   const data = renovarContratoSchema.parse(req.body);

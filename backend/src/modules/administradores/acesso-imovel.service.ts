@@ -49,6 +49,30 @@ export async function verificarAcessoAoPagamento(usuarioId: string, role: Role, 
   return verificarAcessoAoImovel(usuarioId, role, pagamento.contrato.imovelId);
 }
 
+// Variante para rotas que recebem um inquilinoId. Um inquilino pode ter
+// contratos em varios imoveis ao longo do tempo - o admin so precisa ter
+// vinculo com UM deles (ativo ou historico, ver inquilinos.service.ts:listar).
+// Inquilino SEM nenhum contrato ainda (acabou de ser cadastrado, antes do
+// primeiro contrato) fica visivel pra qualquer admin com podeVerInquilinos -
+// senao o proprio admin que acabou de cadastrar o inquilino nao conseguiria
+// achar-lo de novo pra criar o contrato (a restricao so faz sentido depois
+// que o inquilino esta de fato vinculado a algum imovel).
+export async function verificarAcessoAoInquilino(usuarioId: string, role: Role, inquilinoId: string): Promise<boolean> {
+  if (role !== "administrador") return true;
+
+  const totalContratos = await prisma.contrato.count({ where: { inquilinoId } });
+  if (totalContratos === 0) return true;
+
+  const idsPermitidos = await obterImovelIdsPermitidos(usuarioId, role);
+  if (!idsPermitidos || idsPermitidos.length === 0) return false;
+
+  const contrato = await prisma.contrato.findFirst({
+    where: { inquilinoId, imovelId: { in: idsPermitidos } },
+    select: { id: true },
+  });
+  return Boolean(contrato);
+}
+
 // Combina um filtro explicito de imovelId (vindo de query string) com a
 // restricao de acesso do administrador. Se o admin pedir um imovel fora da
 // sua lista, forca resultado vazio em vez de vazar dados de outros imoveis.

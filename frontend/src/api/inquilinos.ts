@@ -37,10 +37,7 @@ export async function criarInquilino(
   return data;
 }
 
-export async function atualizarInquilino(
-  id: string,
-  input: Partial<Omit<InquilinoInput, "cpf">>,
-): Promise<Inquilino> {
+export async function atualizarInquilino(id: string, input: Partial<InquilinoInput>): Promise<Inquilino> {
   const { data } = await api.put(`/inquilinos/${id}`, input);
   return data;
 }

@@ -23,7 +23,6 @@ import { calcularParcelasCaucaoPreview } from "@/lib/caucao";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DoubleConfirmDialog } from "@/components/double-confirm-dialog";
 import { CurrencyInput } from "@/components/currency-input";
 import { EmptyState } from "@/components/empty-state";
@@ -36,6 +35,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +44,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+// Sempre retorna um inteiro entre 1 e 31 - evita NaN (campo vazio), valores
+// fora do intervalo e outros estados intermediarios invalidos enquanto o
+// usuario digita.
+function parseDiaVencimento(valor: string): number {
+  const numero = Math.trunc(Number(valor));
+  if (!Number.isFinite(numero)) return 1;
+  return Math.min(31, Math.max(1, numero));
+}
 
 const FORM_VAZIO: ContratoInput = {
   imovelId: "",
@@ -128,6 +137,7 @@ type AbaContrato = "todos" | "ativo" | "encerrado";
 export function ContratosPage() {
   const { usuario } = useAuth();
   const podeEditar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeEditarContratos;
+  const ehProprietario = usuario?.role === "proprietario";
   const queryClient = useQueryClient();
 
   const [aba, setAba] = useState<AbaContrato>("todos");
@@ -139,6 +149,9 @@ export function ContratosPage() {
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
   const [mostrarUploadPdf, setMostrarUploadPdf] = useState(false);
   const inputArquivoContratoRef = useRef<HTMLInputElement>(null);
+  const [arquivoQuebra, setArquivoQuebra] = useState<File | null>(null);
+  const [erroArquivoQuebra, setErroArquivoQuebra] = useState<string | null>(null);
+  const inputArquivoQuebraRef = useRef<HTMLInputElement>(null);
 
   const [contratoRenovando, setContratoRenovando] = useState<Contrato | null>(null);
   const [formRenovacao, setFormRenovacao] = useState<RenovarContratoInput>({
@@ -209,12 +222,14 @@ export function ContratosPage() {
   });
 
   const mutEncerrar = useMutation({
-    mutationFn: (id: string) => encerrarContrato(id),
+    mutationFn: ({ id, arquivo }: { id: string; arquivo?: File }) => encerrarContrato(id, arquivo),
     onSuccess: async () => {
       toast.success("Contrato encerrado.");
       await invalidar();
       await queryClient.invalidateQueries({ queryKey: ["imoveis"] });
       setConfirmacao(null);
+      setArquivoQuebra(null);
+      setErroArquivoQuebra(null);
     },
     onError: (err) => toast.error(mensagemErro(err)),
   });
@@ -283,6 +298,26 @@ export function ContratosPage() {
     }
     setErroArquivo(null);
     setArquivoContrato(arquivo);
+  }
+
+  function selecionarArquivoQuebra(e: ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0] ?? null;
+    if (arquivo) {
+      if (arquivo.type !== "application/pdf") {
+        setErroArquivoQuebra("Envie um arquivo PDF.");
+        setArquivoQuebra(null);
+        e.target.value = "";
+        return;
+      }
+      if (arquivo.size > 10 * 1024 * 1024) {
+        setErroArquivoQuebra("O arquivo deve ter no máximo 10MB.");
+        setArquivoQuebra(null);
+        e.target.value = "";
+        return;
+      }
+    }
+    setErroArquivoQuebra(null);
+    setArquivoQuebra(arquivo);
   }
 
   function abrirRenovacao(contrato: Contrato) {
@@ -388,9 +423,22 @@ export function ContratosPage() {
                       </Button>
                       {podeEditar && contrato.status === "ativo" && (
                         <>
-                          <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
-                            Renovar
-                          </Button>
+                          {ehProprietario ? (
+                            <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
+                              Renovar
+                            </Button>
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button variant="ghost" size="sm" disabled>
+                                    Renovar
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Apenas o Proprietário pode alterar valores contratuais</TooltipContent>
+                            </Tooltip>
+                          )}
                           <Button variant="ghost" size="sm" onClick={() => setConfirmacao(contrato)}>
                             Encerrar
                           </Button>
@@ -432,9 +480,22 @@ export function ContratosPage() {
                   </Button>
                   {podeEditar && contrato.status === "ativo" && (
                     <>
-                      <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
-                        Renovar
-                      </Button>
+                      {ehProprietario ? (
+                        <Button variant="ghost" size="sm" onClick={() => abrirRenovacao(contrato)}>
+                          Renovar
+                        </Button>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button variant="ghost" size="sm" disabled>
+                                Renovar
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Apenas o Proprietário pode alterar valores contratuais</TooltipContent>
+                        </Tooltip>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => setConfirmacao(contrato)}>
                         Encerrar
                       </Button>
@@ -528,9 +589,9 @@ export function ContratosPage() {
                   id="diaVencimento"
                   type="number"
                   min={1}
-                  max={28}
+                  max={31}
                   value={form.diaVencimento}
-                  onChange={(e) => setForm({ ...form, diaVencimento: Number(e.target.value) })}
+                  onChange={(e) => setForm({ ...form, diaVencimento: parseDiaVencimento(e.target.value) })}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -667,9 +728,9 @@ export function ContratosPage() {
                 <Input
                   type="number"
                   min={1}
-                  max={28}
+                  max={31}
                   value={formRenovacao.diaVencimento}
-                  onChange={(e) => setFormRenovacao({ ...formRenovacao, diaVencimento: Number(e.target.value) })}
+                  onChange={(e) => setFormRenovacao({ ...formRenovacao, diaVencimento: parseDiaVencimento(e.target.value) })}
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -790,17 +851,74 @@ export function ContratosPage() {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
+      <Dialog
         open={Boolean(confirmacao)}
-        onOpenChange={(open) => !open && setConfirmacao(null)}
-        titulo="Encerrar contrato"
-        descricao="O contrato será marcado como encerrado e o imóvel volta a ficar vago."
-        textoConfirmar="Encerrar"
-        onConfirm={() => {
-          if (!confirmacao) return;
-          mutEncerrar.mutate(confirmacao.id);
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirmacao(null);
+            setArquivoQuebra(null);
+            setErroArquivoQuebra(null);
+          }
         }}
-      />
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Encerrar contrato</DialogTitle>
+            <DialogDescription>
+              O contrato será marcado como encerrado e o imóvel volta a ficar vago.
+            </DialogDescription>
+          </DialogHeader>
+          {confirmacao && new Date(confirmacao.dataFim) > new Date() && (
+            <div className="rounded-lg border">
+              <div className="flex items-center gap-2 p-2.5 text-sm font-medium">
+                <Paperclip className="h-4 w-4 text-muted-foreground" />
+                Anexar quebra de contrato (opcional)
+              </div>
+              <div className="flex flex-col gap-2 border-t p-2.5">
+                <input
+                  ref={inputArquivoQuebraRef}
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={selecionarArquivoQuebra}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => inputArquivoQuebraRef.current?.click()}
+                  >
+                    {arquivoQuebra ? "Trocar arquivo" : "Selecionar PDF"}
+                  </Button>
+                  {arquivoQuebra && (
+                    <span className="truncate text-sm text-muted-foreground">{arquivoQuebra.name}</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Anexe o documento de quebra de contrato assinado, se houver. Máx. 10MB.
+                </p>
+                {erroArquivoQuebra && <p className="text-xs text-destructive">{erroArquivoQuebra}</p>}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmacao(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={mutEncerrar.isPending}
+              onClick={() => {
+                if (!confirmacao) return;
+                mutEncerrar.mutate({ id: confirmacao.id, arquivo: arquivoQuebra ?? undefined });
+              }}
+            >
+              {mutEncerrar.isPending ? "Encerrando..." : "Encerrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DoubleConfirmDialog
         open={Boolean(excluindo)}

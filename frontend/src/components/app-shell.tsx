@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Menu, LogOut, Home, UserRound, Moon, Sun, ArrowUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useContratosPendentesCount } from "@/hooks/use-contratos-pendentes-count";
+import { NotificationBell } from "@/components/notification-bell";
 import { pageTransition } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -238,6 +239,7 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
           </div>
 
           <div className="flex items-center gap-1">
+            <NotificationBell />
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

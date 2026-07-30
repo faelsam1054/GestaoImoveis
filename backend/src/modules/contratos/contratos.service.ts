@@ -4,6 +4,7 @@ import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarContratoPdf } from "../../services/pdf/contrato.pdf";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import { enviarEmail } from "../email/email.service";
+import { criarNotificacao } from "../notificacoes/notificacoes.service";
 import type { criarContratoSchema, renovarContratoSchema } from "./contratos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -255,7 +256,9 @@ export async function criar(data: z.infer<typeof criarContratoSchema>, criador: 
   if (!inquilino.usuario.ativo) throw new AppError("Este inquilino esta inativo", 409);
 
   // Cadastrado por Administrador: nasce pendente de aprovacao do Proprietario -
-  // sem pagamentos, sem ocupar o imovel e sem PDF ainda (gerados em aprovar()).
+  // sem pagamentos e sem ocupar o imovel ainda. O PDF ja e gerado aqui (nao so
+  // em aprovar()) para o Proprietario poder visualizar o contrato antes de
+  // decidir aprovar ou rejeitar.
   if (criador.role === "administrador") {
     const contratoPendente = await prisma.contrato.create({
       data: {
@@ -273,8 +276,9 @@ export async function criar(data: z.infer<typeof criarContratoSchema>, criador: 
       include: includePadrao,
     });
 
+    await gerarEAnexarContratoPdf(contratoPendente.id);
     await notificarProprietariosContratoPendente(contratoPendente);
-    return contratoPendente;
+    return prisma.contrato.findUniqueOrThrow({ where: { id: contratoPendente.id }, include: includePadrao });
   }
 
   const contratoCriado = await prisma.$transaction(async (tx) => {
@@ -344,22 +348,45 @@ export async function aprovar(id: string, aprovadorId: string) {
     });
   });
 
-  await gerarEAnexarContratoPdf(contratoAprovado.id);
+  // Normalmente ja foi gerado na criacao (ver criar()); regenera aqui so como
+  // fallback defensivo caso aquela geracao tenha falhado silenciosamente.
+  if (!contratoAprovado.arquivoPdfUrl) {
+    await gerarEAnexarContratoPdf(contratoAprovado.id);
+  }
   return prisma.contrato.findUniqueOrThrow({ where: { id }, include: includePadrao });
 }
 
 export async function rejeitar(id: string, motivoRejeicao: string) {
-  const contrato = await prisma.contrato.findUnique({ where: { id } });
+  const contrato = await prisma.contrato.findUnique({ where: { id }, include: { imovel: true } });
   if (!contrato) throw new AppError("Contrato nao encontrado", 404);
   if (contrato.status !== "pendente_aprovacao") {
     throw new AppError("Este contrato nao esta pendente de aprovacao", 409);
   }
 
-  return prisma.contrato.update({
+  const contratoRejeitado = await prisma.contrato.update({
     where: { id },
     data: { status: "rejeitado", motivoRejeicao, dataRejeicao: new Date() },
     include: includePadrao,
   });
+
+  // Best-effort: contrato ja foi rejeitado, a notificacao nao deve desfazer isso.
+  // criadoPorId so e nulo para contratos legados/criados fora desse fluxo - nada a notificar.
+  if (contrato.criadoPorId) {
+    try {
+      await criarNotificacao({
+        usuarioId: contrato.criadoPorId,
+        tipo: "CONTRATO_REJEITADO",
+        titulo: "Contrato rejeitado",
+        mensagem: `O contrato do imóvel ${contrato.imovel.logradouro}, ${contrato.imovel.numero} foi rejeitado pelo Proprietário. Motivo: ${motivoRejeicao}`,
+        entidade: "Contrato",
+        entidadeId: contrato.id,
+      });
+    } catch (err) {
+      console.error("Falha ao notificar administrador sobre rejeicao de contrato:", err);
+    }
+  }
+
+  return contratoRejeitado;
 }
 
 async function liberarImovelSeSemContratoAtivo(tx: Prisma.TransactionClient, imovelId: string) {
@@ -369,14 +396,17 @@ async function liberarImovelSeSemContratoAtivo(tx: Prisma.TransactionClient, imo
   }
 }
 
-export async function encerrar(id: string) {
+export async function encerrar(id: string, quebraContratoUrl?: string) {
   const contrato = await buscarPorIdOuFalhar(id);
   if (contrato.status !== "ativo") {
     throw new AppError("Somente contratos ativos podem ser encerrados", 409);
   }
 
   return prisma.$transaction(async (tx) => {
-    const atualizado = await tx.contrato.update({ where: { id }, data: { status: "encerrado" } });
+    const atualizado = await tx.contrato.update({
+      where: { id },
+      data: { status: "encerrado", quebraContratoUrl },
+    });
     await liberarImovelSeSemContratoAtivo(tx, contrato.imovelId);
     return atualizado;
   });

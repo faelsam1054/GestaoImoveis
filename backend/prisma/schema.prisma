@@ -45,6 +45,7 @@ model Usuario {
   contratosCriados        Contrato[]               @relation("ContratoCriadoPor")
   contratosAprovados      Contrato[]               @relation("ContratoAprovadoPor")
   aditivosCriados         AditivoContrato[]
+  notificacoes            Notificacao[]
 
   @@index([role])
 }
@@ -212,6 +213,7 @@ model Contrato {
 
   arquivoPdfUrl      String? // gerado automaticamente pelo sistema ao criar/renovar o contrato
   contratoAssinadoUrl String? // PDF do contrato assinado, enviado manualmente pelo proprietario/administrador
+  quebraContratoUrl   String? // PDF de quebra de contrato, opcional, anexado so no momento do encerramento antecipado
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -294,6 +296,11 @@ model Pagamento {
   formaPagamento String? // pix | transferencia | dinheiro | boleto | outro
   observacoes    String?
 
+  comprovanteUrl          String? // PDF ou imagem (jpg/png) do comprovante, opcional
+  comprovanteNomeOriginal String? // nome do arquivo enviado pelo usuario, para exibir na UI
+  comprovanteTamanho      Int? // bytes, para exibir na UI
+  comprovanteUploadEm     DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -356,6 +363,11 @@ model GastoManutencao {
   @@index([status])
   @@index([categoria])
   @@index([manutencaoOrigemId])
+  // Cinturao de seguranca contra corrida em gerarProximasRecorrencias():
+  // chamadas concorrentes a listar() nao devem conseguir criar duas
+  // instancias para o mesmo mes da mesma origem recorrente, mesmo se a
+  // logica de aplicacao falhar em evitar isso (ver manutencao.service.ts).
+  @@unique([manutencaoOrigemId, dataExecucao])
 }
 
 // ── Financeiro: mensalidade do administrador ─────────────────────────────
@@ -445,4 +457,24 @@ model EmailEnviado {
   enviadoEm     DateTime @default(now())
 
   @@index([enviadoEm])
+}
+
+model Notificacao {
+  id        String  @id @default(cuid())
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  tipo     String // ex: CONTRATO_REJEITADO - string livre para permitir novos tipos sem migration
+  titulo   String
+  mensagem String
+
+  // Origem opcional, para a UI poder linkar de volta (ex: entidade="Contrato", entidadeId=<id>)
+  entidade   String?
+  entidadeId String?
+
+  lida      Boolean   @default(false)
+  lidaEm    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([usuarioId, lida])
 }

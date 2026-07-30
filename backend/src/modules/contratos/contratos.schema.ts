@@ -6,7 +6,7 @@ export const criarContratoSchema = z
     inquilinoId: z.string().min(1),
     dataInicio: z.coerce.date(),
     dataFim: z.coerce.date(),
-    diaVencimento: z.number().int().min(1).max(28),
+    diaVencimento: z.number().int().min(1).max(31),
     valorAluguel: z.number().positive(),
     valorCaucao: z.number().nonnegative().optional(),
     caucaoNumeroParcelas: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
@@ -20,7 +20,7 @@ export const renovarContratoSchema = z
   .object({
     dataInicio: z.coerce.date(),
     dataFim: z.coerce.date(),
-    diaVencimento: z.number().int().min(1).max(28),
+    diaVencimento: z.number().int().min(1).max(31),
     valorAluguel: z.number().positive(),
     valorCaucao: z.number().nonnegative().optional(),
     caucaoNumeroParcelas: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),

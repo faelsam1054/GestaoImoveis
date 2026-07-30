@@ -10,8 +10,12 @@ interface DoubleConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   titulo: string;
   descricao: ReactNode;
-  confirmLabel: string;
-  confirmValue: string;
+  confirmLabel?: string;
+  confirmValue?: string;
+  // Quando true, dispensa o campo de digitacao - libera so com o checkbox.
+  // Usado onde digitar um ID bruto e mais atrito do que protecao real
+  // (ver ManutencaoPage); as demais telas continuam com checkbox + digitacao.
+  somenteCheckbox?: boolean;
   textoConfirmar?: string;
   pending?: boolean;
   onConfirm: () => void;
@@ -27,6 +31,7 @@ export function DoubleConfirmDialog({
   descricao,
   confirmLabel,
   confirmValue,
+  somenteCheckbox = false,
   textoConfirmar = "Excluir definitivamente",
   pending = false,
   onConfirm,
@@ -41,7 +46,9 @@ export function DoubleConfirmDialog({
     }
   }, [open]);
 
-  const liberado = entendido && digitado.trim().toLowerCase() === confirmValue.trim().toLowerCase();
+  const liberado = somenteCheckbox
+    ? entendido
+    : entendido && digitado.trim().toLowerCase() === (confirmValue ?? "").trim().toLowerCase();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -55,16 +62,18 @@ export function DoubleConfirmDialog({
             <Checkbox checked={entendido} onCheckedChange={(v) => setEntendido(v === true)} className="mt-0.5" />
             Entendo que esta ação é permanente e não pode ser desfeita.
           </label>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="confirmacao-dupla-input">{confirmLabel}</Label>
-            <Input
-              id="confirmacao-dupla-input"
-              value={digitado}
-              onChange={(e) => setDigitado(e.target.value)}
-              placeholder={confirmValue}
-              autoComplete="off"
-            />
-          </div>
+          {!somenteCheckbox && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="confirmacao-dupla-input">{confirmLabel}</Label>
+              <Input
+                id="confirmacao-dupla-input"
+                value={digitado}
+                onChange={(e) => setDigitado(e.target.value)}
+                placeholder={confirmValue}
+                autoComplete="off"
+              />
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

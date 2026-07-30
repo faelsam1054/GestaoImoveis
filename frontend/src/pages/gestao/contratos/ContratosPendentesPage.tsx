@@ -2,9 +2,18 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Check, X, Clock } from "lucide-react";
-import { listarContratosPendentes, aprovarContrato, rejeitarContrato } from "@/api/contratos";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
+import { Check, X, Clock, FileText, Download } from "lucide-react";
+import {
+  listarContratosPendentes,
+  aprovarContrato,
+  rejeitarContrato,
+  obterArquivoContratoBlob,
+} from "@/api/contratos";
 import { mensagemErro } from "@/lib/api-client";
+import { dispararDownloadBlob } from "@/lib/download";
 import { formatarData, formatarMoeda } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -12,6 +21,7 @@ import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog,
@@ -23,16 +33,35 @@ import {
 } from "@/components/ui/dialog";
 import type { Contrato } from "@/types/domain";
 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+
 export function ContratosPendentesPage() {
   const queryClient = useQueryClient();
   const [rejeitando, setRejeitando] = useState<Contrato | null>(null);
   const [motivo, setMotivo] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  const [visualizando, setVisualizando] = useState<Contrato | null>(null);
 
   const { data: contratos, isLoading } = useQuery({
     queryKey: ["contratos", "pendentes-aprovacao"],
     queryFn: listarContratosPendentes,
   });
+
+  const { data: arquivoBlob, isLoading: carregandoPreview } = useQuery({
+    queryKey: ["contratos", visualizando?.id, "arquivo-blob"],
+    queryFn: () => obterArquivoContratoBlob(visualizando!.id),
+    enabled: Boolean(visualizando?.arquivoPdfUrl),
+  });
+
+  async function baixarArquivo() {
+    if (!visualizando) return;
+    try {
+      const blob = arquivoBlob ?? (await obterArquivoContratoBlob(visualizando.id));
+      dispararDownloadBlob(blob, "contrato.pdf");
+    } catch (err) {
+      toast.error(mensagemErro(err));
+    }
+  }
 
   function invalidar() {
     return Promise.all([
@@ -96,6 +125,7 @@ export function ContratosPendentesPage() {
                   <TableHead>Período</TableHead>
                   <TableHead>Valor</TableHead>
                   <TableHead>Cadastrado por</TableHead>
+                  <TableHead>Contrato</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -113,6 +143,16 @@ export function ContratosPendentesPage() {
                     </TableCell>
                     <TableCell>{formatarMoeda(contrato.valorAluguel)}</TableCell>
                     <TableCell>{contrato.criadoPor?.nome ?? "—"}</TableCell>
+                    <TableCell>
+                      {contrato.arquivoPdfUrl ? (
+                        <Button variant="ghost" size="sm" onClick={() => setVisualizando(contrato)}>
+                          <FileText className="h-4 w-4" />
+                          Visualizar Contrato
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Sem anexo</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
@@ -162,6 +202,19 @@ export function ContratosPendentesPage() {
                 />
                 <MobileRowField label="Valor" value={formatarMoeda(contrato.valorAluguel)} />
                 <MobileRowField label="Cadastrado por" value={contrato.criadoPor?.nome ?? "—"} />
+                <MobileRowField
+                  label="Contrato"
+                  value={
+                    contrato.arquivoPdfUrl ? (
+                      <Button variant="ghost" size="sm" onClick={() => setVisualizando(contrato)}>
+                        <FileText className="h-4 w-4" />
+                        Visualizar
+                      </Button>
+                    ) : (
+                      "Sem anexo"
+                    )
+                  }
+                />
                 <MobileRowActions>
                   <Button
                     variant="ghost"
@@ -226,6 +279,39 @@ export function ContratosPendentesPage() {
               }}
             >
               {mutRejeitar.isPending ? "Rejeitando..." : "Rejeitar contrato"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(visualizando)} onOpenChange={(open) => !open && setVisualizando(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Contrato</DialogTitle>
+            <DialogDescription>
+              {visualizando &&
+                `${visualizando.imovel?.logradouro}, ${visualizando.imovel?.numero} - ${visualizando.inquilino?.usuario?.nome}`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center rounded-lg border bg-muted/30 p-4">
+            {carregandoPreview && <Skeleton className="h-[500px] w-[380px]" />}
+            {arquivoBlob && (
+              <Document
+                file={arquivoBlob}
+                loading={<Skeleton className="h-[500px] w-[380px]" />}
+                error={<p className="text-sm text-muted-foreground">Não foi possível pré-visualizar o PDF.</p>}
+              >
+                <Page pageNumber={1} width={380} />
+              </Document>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVisualizando(null)}>
+              Fechar
+            </Button>
+            <Button onClick={baixarArquivo}>
+              <Download className="h-4 w-4" />
+              Baixar
             </Button>
           </DialogFooter>
         </DialogContent>

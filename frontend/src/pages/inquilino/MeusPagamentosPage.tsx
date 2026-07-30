@@ -1,16 +1,28 @@
 import { useQuery } from "@tanstack/react-query";
-import { Download, Wallet } from "lucide-react";
+import { toast } from "sonner";
+import { Download, Wallet, Paperclip } from "lucide-react";
 import { listarMeusPagamentos } from "@/api/me";
+import { baixarComprovantePagamento } from "@/api/pagamentos";
 import { formatarCompetencia, formatarData, formatarMoeda } from "@/lib/format";
+import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { MobileRowCard, MobileRowCardHeader, MobileRowField, MobileRowActions } from "@/components/mobile-row-card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { Pagamento } from "@/types/domain";
 
 export function MeusPagamentosPage() {
   const { data: pagamentos, isLoading } = useQuery({ queryKey: ["me", "pagamentos"], queryFn: listarMeusPagamentos });
+
+  async function baixarComprovante(pagamento: Pagamento) {
+    try {
+      await baixarComprovantePagamento(pagamento.id, pagamento.comprovanteNomeOriginal ?? "comprovante");
+    } catch (err) {
+      toast.error(mensagemErro(err));
+    }
+  }
 
   return (
     <div>
@@ -61,6 +73,12 @@ export function MeusPagamentosPage() {
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
+                      {pagamento.comprovanteUrl && (
+                        <Button variant="ghost" size="sm" onClick={() => baixarComprovante(pagamento)}>
+                          <Paperclip className="h-4 w-4" />
+                          Comprovante
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -82,14 +100,22 @@ export function MeusPagamentosPage() {
                   label="Valor"
                   value={formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}
                 />
-                {pagamento.recibo && (
+                {(pagamento.recibo || pagamento.comprovanteUrl) && (
                   <MobileRowActions>
-                    <Button variant="ghost" size="sm" asChild>
-                      <a href={pagamento.recibo.caminhoArquivo} target="_blank" rel="noreferrer">
-                        <Download className="h-4 w-4" />
-                        Baixar recibo
-                      </a>
-                    </Button>
+                    {pagamento.recibo && (
+                      <Button variant="ghost" size="sm" asChild>
+                        <a href={pagamento.recibo.caminhoArquivo} target="_blank" rel="noreferrer">
+                          <Download className="h-4 w-4" />
+                          Baixar recibo
+                        </a>
+                      </Button>
+                    )}
+                    {pagamento.comprovanteUrl && (
+                      <Button variant="ghost" size="sm" onClick={() => baixarComprovante(pagamento)}>
+                        <Paperclip className="h-4 w-4" />
+                        Comprovante
+                      </Button>
+                    )}
                   </MobileRowActions>
                 )}
               </MobileRowCard>

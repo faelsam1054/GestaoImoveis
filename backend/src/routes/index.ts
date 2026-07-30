@@ -15,6 +15,7 @@ import auditoriaRoutes from "../modules/auditoria/auditoria.routes";
 import dashboardRoutes from "../modules/dashboard/dashboard.routes";
 import relatoriosRoutes from "../modules/relatorios/relatorios.routes";
 import emailRoutes from "../modules/email/email.routes";
+import notificacoesRoutes from "../modules/notificacoes/notificacoes.routes";
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use("/auditoria", auditoriaRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/relatorios", relatoriosRoutes);
 router.use("/emails-enviados", emailRoutes);
+router.use("/notificacoes", notificacoesRoutes);
 
 export default router;

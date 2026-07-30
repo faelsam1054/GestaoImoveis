@@ -1,4 +1,5 @@
 import { api } from "@/lib/api-client";
+import { dispararDownloadBlob } from "@/lib/download";
 import type { FormaPagamento, Paginado, Pagamento, StatusPagamento, TipoPagamento } from "@/types/domain";
 
 export interface PagamentoAvulsoInput {
@@ -60,4 +61,30 @@ export async function marcarPagamentoComoPago(id: string, input: MarcarPagoInput
 export async function desfazerPagamento(id: string, removerRecibo: boolean): Promise<Pagamento> {
   const { data } = await api.post(`/pagamentos/${id}/desfazer-pagamento`, { removerRecibo });
   return data;
+}
+
+export async function anexarComprovantePagamento(id: string, arquivo: File): Promise<Pagamento> {
+  const form = new FormData();
+  form.append("comprovante", arquivo);
+  const { data } = await api.post(`/pagamentos/${id}/comprovante`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function removerComprovantePagamento(id: string): Promise<Pagamento> {
+  const { data } = await api.delete(`/pagamentos/${id}/comprovante`);
+  return data;
+}
+
+// Endpoint de comprovante exige autenticacao, entao busca como blob para
+// poder tanto pre-visualizar (imagem/PDF) quanto disparar o download.
+export async function obterComprovantePagamentoBlob(id: string): Promise<Blob> {
+  const { data } = await api.get(`/pagamentos/${id}/comprovante`, { responseType: "blob" });
+  return data;
+}
+
+export async function baixarComprovantePagamento(id: string, nomeArquivo = "comprovante"): Promise<void> {
+  const blob = await obterComprovantePagamentoBlob(id);
+  dispararDownloadBlob(blob, nomeArquivo);
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Search, KeyRound, Users } from "lucide-react";
+import { Plus, Search, KeyRound, Users, Lock } from "lucide-react";
 import {
   listarInquilinos,
   criarInquilino,
@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const FORM_VAZIO: InquilinoInput = {
   nome: "",
@@ -168,7 +169,10 @@ export function InquilinosPage() {
   function salvar() {
     setErro(null);
     if (editando) {
-      const { cpf: _cpf, ...editavel } = form;
+      // CPF so vai no payload se for Proprietario - Admin nem tem o campo
+      // habilitado na UI, mas evita mandar o valor de qualquer forma.
+      const { cpf: _cpf, ...resto } = form;
+      const editavel = ehProprietario ? form : resto;
       mutAtualizar.mutate({ id: editando.id, input: editavel });
     } else {
       mutCriar.mutate(form);
@@ -177,6 +181,10 @@ export function InquilinosPage() {
 
   const salvando = mutCriar.isPending || mutAtualizar.isPending;
   const inquilinos = resultado?.dados ?? [];
+  // CPF so e travado quando EDITANDO um inquilino existente e quem esta
+  // logado nao e Proprietario - no cadastro (novo inquilino) continua livre
+  // pra quem tem permissao de editar, igual antes.
+  const cpfBloqueadoParaEdicao = Boolean(editando) && !ehProprietario;
 
   return (
     <div>
@@ -210,6 +218,14 @@ export function InquilinosPage() {
           </label>
         )}
       </div>
+
+      {!isLoading && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          {resultado?.paginacao.total === 1
+            ? "1 inquilino visível"
+            : `${resultado?.paginacao.total ?? 0} inquilinos visíveis`}
+        </p>
+      )}
 
       {isLoading && (
         <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
@@ -389,12 +405,23 @@ export function InquilinosPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cpf">CPF</Label>
-                <Input
-                  id="cpf"
-                  value={form.cpf}
-                  disabled={Boolean(editando)}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                />
+                {cpfBloqueadoParaEdicao ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="relative">
+                        <Input id="cpf" value={form.cpf} disabled className="pr-8 text-muted-foreground" />
+                        <Lock className="pointer-events-none absolute top-1/2 right-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Apenas o Proprietário pode editar o CPF</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Input
+                    id="cpf"
+                    value={form.cpf}
+                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                  />
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="telefone">Telefone</Label>

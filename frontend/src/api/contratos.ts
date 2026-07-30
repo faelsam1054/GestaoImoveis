@@ -35,8 +35,16 @@ export async function criarContrato(input: ContratoInput): Promise<Contrato> {
   return data;
 }
 
-export async function encerrarContrato(id: string): Promise<Contrato> {
-  const { data } = await api.patch(`/contratos/${id}/encerrar`);
+export async function encerrarContrato(id: string, arquivoQuebra?: File): Promise<Contrato> {
+  if (!arquivoQuebra) {
+    const { data } = await api.patch(`/contratos/${id}/encerrar`);
+    return data;
+  }
+  const form = new FormData();
+  form.append("arquivoQuebra", arquivoQuebra);
+  const { data } = await api.patch(`/contratos/${id}/encerrar`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
   return data;
 }
 
@@ -76,4 +84,11 @@ export async function rejeitarContrato(id: string, motivoRejeicao: string): Prom
 
 export async function excluirContrato(id: string): Promise<void> {
   await api.delete(`/contratos/${id}`);
+}
+
+// Endpoint exige autenticacao, entao busca como blob para poder tanto
+// pre-visualizar (react-pdf) quanto disparar o download.
+export async function obterArquivoContratoBlob(id: string): Promise<Blob> {
+  const { data } = await api.get(`/contratos/${id}/download-arquivo`, { responseType: "blob" });
+  return data;
 }

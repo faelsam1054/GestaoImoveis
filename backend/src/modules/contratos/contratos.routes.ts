@@ -19,10 +19,20 @@ router.get("/", authorizePermissao("podeVerContratos"), controller.listar);
 // como um :id.
 router.get("/pendentes-aprovacao", requireRole("proprietario"), controller.listarPendentesAprovacao);
 router.get("/:id", authorizePermissao("podeVerContratos"), controller.detalhar);
+// Sem authorizePermissao aqui de proposito: a regra e mais restrita que
+// "podeVerContratos" (so o Proprietario e o Administrador que cadastrou o
+// contrato, nao qualquer admin vinculado ao imovel) - a checagem fica no
+// controller.
+router.get("/:id/download-arquivo", controller.baixarArquivoContrato);
 router.post("/", authorizePermissao("podeEditarContratos"), controller.criar);
 router.post("/:id/aprovar", requireRole("proprietario"), controller.aprovar);
 router.post("/:id/rejeitar", requireRole("proprietario"), controller.rejeitar);
-router.patch("/:id/encerrar", authorizePermissao("podeEditarContratos"), controller.encerrar);
+router.patch(
+  "/:id/encerrar",
+  authorizePermissao("podeEditarContratos"),
+  uploadContratoAssinado.single("arquivoQuebra"),
+  controller.encerrar,
+);
 router.post("/:id/renovar", authorizePermissao("podeEditarContratos"), controller.renovar);
 router.post(
   "/:id/contrato-assinado",

@@ -209,3 +209,33 @@ export async function desfazerPagamento(id: string, data: z.infer<typeof desfaze
     include: includePadrao,
   });
 }
+
+export async function anexarComprovante(id: string, url: string, nomeOriginal: string, tamanho: number) {
+  const antes = await buscarPorIdOuFalhar(id);
+  await removerArquivo(antes.comprovanteUrl);
+  return prisma.pagamento.update({
+    where: { id },
+    data: {
+      comprovanteUrl: url,
+      comprovanteNomeOriginal: nomeOriginal,
+      comprovanteTamanho: tamanho,
+      comprovanteUploadEm: new Date(),
+    },
+    include: includePadrao,
+  });
+}
+
+export async function removerComprovante(id: string) {
+  const antes = await buscarPorIdOuFalhar(id);
+  await removerArquivo(antes.comprovanteUrl);
+  return prisma.pagamento.update({
+    where: { id },
+    data: {
+      comprovanteUrl: null,
+      comprovanteNomeOriginal: null,
+      comprovanteTamanho: null,
+      comprovanteUploadEm: null,
+    },
+    include: includePadrao,
+  });
+}

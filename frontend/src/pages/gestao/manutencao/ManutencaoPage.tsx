@@ -43,6 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -79,7 +80,8 @@ const FORM_VAZIO: FormManutencao = {
 
 export function ManutencaoPage() {
   const { usuario } = useAuth();
-  const podeCadastrar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeCadastrarManutencao;
+  const ehProprietario = usuario?.role === "proprietario";
+  const podeCadastrar = ehProprietario || usuario?.permissaoAdministrador?.podeCadastrarManutencao;
   const queryClient = useQueryClient();
   const inputComprovanteRef = useRef<HTMLInputElement>(null);
 
@@ -396,7 +398,7 @@ export function ManutencaoPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {podeCadastrar && proximo && (
+                        {podeCadastrar && proximo && (proximo !== "aprovado" || ehProprietario) && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -405,6 +407,18 @@ export function ManutencaoPage() {
                           >
                             Marcar {proximo}
                           </Button>
+                        )}
+                        {podeCadastrar && proximo === "aprovado" && !ehProprietario && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>
+                                <Button variant="outline" size="sm" disabled>
+                                  Marcar aprovado
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>Apenas o Proprietário pode aprovar manutenção</TooltipContent>
+                          </Tooltip>
                         )}
                         <Button variant="ghost" size="icon" className="text-muted-foreground" asChild>
                           <Link to={`/manutencao/${gasto.id}`}>
@@ -491,7 +505,7 @@ export function ManutencaoPage() {
                     }
                   />
                   <MobileRowActions>
-                    {podeCadastrar && proximo && (
+                    {podeCadastrar && proximo && (proximo !== "aprovado" || ehProprietario) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -500,6 +514,18 @@ export function ManutencaoPage() {
                       >
                         Marcar {proximo}
                       </Button>
+                    )}
+                    {podeCadastrar && proximo === "aprovado" && !ehProprietario && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button variant="outline" size="sm" disabled>
+                              Marcar aprovado
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>Apenas o Proprietário pode aprovar manutenção</TooltipContent>
+                      </Tooltip>
                     )}
                     <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
                       <Link to={`/manutencao/${gasto.id}`}>
@@ -689,12 +715,20 @@ export function ManutencaoPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {STATUS_MANUTENCAO.map((s) => (
-                        <SelectItem key={s} value={s} className="capitalize">
+                        <SelectItem
+                          key={s}
+                          value={s}
+                          className="capitalize"
+                          disabled={s === "aprovado" && !ehProprietario && editando?.status !== "aprovado"}
+                        >
                           {s}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {!ehProprietario && editando?.status !== "aprovado" && (
+                    <p className="text-xs text-muted-foreground">Apenas o Proprietário pode aprovar manutenção.</p>
+                  )}
                 </div>
 
                 {form.status === "pago" && (
@@ -843,8 +877,7 @@ export function ManutencaoPage() {
             ""
           )
         }
-        confirmLabel={`Digite o ID da manutenção (${excluindo?.id ?? ""}) para confirmar`}
-        confirmValue={excluindo?.id ?? ""}
+        somenteCheckbox
         textoConfirmar="Excluir Definitivamente"
         pending={mutExcluir.isPending}
         onConfirm={() => excluindo && mutExcluir.mutate(excluindo.id)}

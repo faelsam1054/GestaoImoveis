@@ -11,6 +11,7 @@ interface FiltrosInquilino {
   page?: string;
   pageSize?: string;
   apenasExcluidos?: boolean;
+  imovelIdsPermitidos?: string[] | null;
 }
 
 const includeUsuario = {
@@ -22,15 +23,33 @@ export async function listar(filtros: FiltrosInquilino) {
 
   const where: Prisma.InquilinoWhereInput = {
     excluidoEm: filtros.apenasExcluidos ? { not: null } : null,
-    ...(filtros.busca
-      ? {
-          OR: [
-            { cpf: { contains: filtros.busca } },
-            { usuario: { nome: { contains: filtros.busca } } },
-            { usuario: { email: { contains: filtros.busca } } },
-          ],
-        }
-      : {}),
+    // AND (nao spread direto) porque tanto a busca quanto a restricao de
+    // imovel usam sua propria clausula OR - misturar as duas no mesmo nivel
+    // faria a segunda sobrescrever a primeira num objeto JS comum.
+    AND: [
+      filtros.busca
+        ? {
+            OR: [
+              { cpf: { contains: filtros.busca } },
+              { usuario: { nome: { contains: filtros.busca } } },
+              { usuario: { email: { contains: filtros.busca } } },
+            ],
+          }
+        : {},
+      // Administrador so ve inquilinos com pelo menos um contrato (ativo ou
+      // historico) em algum imovel vinculado a ele. Inquilino ainda sem
+      // nenhum contrato (recem cadastrado) fica visivel pra qualquer admin -
+      // a restricao so faz sentido depois que ele esta de fato vinculado a
+      // um imovel especifico (ver mesmo raciocinio em verificarAcessoAoInquilino).
+      filtros.imovelIdsPermitidos
+        ? {
+            OR: [
+              { contratos: { none: {} } },
+              { contratos: { some: { imovelId: { in: filtros.imovelIdsPermitidos } } } },
+            ],
+          }
+        : {},
+    ],
   };
 
   const [dados, total] = await Promise.all([
@@ -102,6 +121,7 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarInquil
     return tx.inquilino.update({
       where: { id },
       data: {
+        cpf: data.cpf,
         telefone: data.telefone,
         contatoEmergenciaNome: data.contatoEmergenciaNome,
         contatoEmergenciaTelefone: data.contatoEmergenciaTelefone,

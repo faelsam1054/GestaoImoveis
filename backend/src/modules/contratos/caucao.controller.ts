@@ -36,6 +36,9 @@ export const pagar = asyncHandler(async (req, res) => {
 });
 
 export const atualizar = asyncHandler(async (req, res) => {
+  if (req.user!.role !== "proprietario") {
+    throw new AppError("Apenas o Proprietário pode alterar valores contratuais", 403);
+  }
   await garantirAcesso(req, paramId(req));
   const data = atualizarParcelasCaucaoSchema.parse(req.body);
   const parcelas = await service.atualizarParcelas(paramId(req), data);

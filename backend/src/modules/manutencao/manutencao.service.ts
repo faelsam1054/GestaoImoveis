@@ -11,6 +11,16 @@ import type {
 } from "./manutencao.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import type { Role } from "../../types/rbac";
+
+// So o Proprietario pode aprovar manutencao (mover para status "aprovado").
+// Chamado tanto por atualizarStatus() (fluxo rapido) quanto por atualizar()
+// (edicao completa) - os dois caminhos permitem setar o campo status.
+function garantirApenasProprietarioAprova(role: Role, statusAnterior: StatusManutencao, statusNovo: StatusManutencao) {
+  if (statusNovo === "aprovado" && statusAnterior !== "aprovado" && role !== "proprietario") {
+    throw new AppError("Apenas o Proprietário pode aprovar manutenção", 403);
+  }
+}
 
 interface FiltrosManutencao {
   imovelId?: string;
@@ -27,6 +37,14 @@ interface FiltrosManutencao {
 // origens (manutencaoOrigemId null, recorrencia != "unica", ativo=true, nao
 // excluidas) sao consideradas; cada instancia gerada aponta de volta pra
 // origem e nasce como "unica" (nao gera sua propria cadeia de recorrencia).
+//
+// Chamadas concorrentes a listar() (duas abas, dois usuarios, refetch
+// sobreposto) rodam essa funcao em paralelo - o "ultima gerada" lido por uma
+// chamada pode ainda nao refletir o que a outra acabou de criar. Por isso
+// createMany({ skipDuplicates: true }) em vez de create() por item: a
+// constraint unica (manutencaoOrigemId, dataExecucao) faz o banco descartar
+// silenciosamente qualquer linha que a outra chamada ja tenha inserido,
+// entao a corrida deixa de gerar duplicata mesmo sem lock explicito.
 async function gerarProximasRecorrencias() {
   const origens = await prisma.gastoManutencao.findMany({
     where: { manutencaoOrigemId: null, recorrencia: { not: "unica" }, ativo: true, excluidoEm: null },
@@ -47,28 +65,31 @@ async function gerarProximasRecorrencias() {
     const proximaData = new Date(dataBase);
     proximaData.setMonth(proximaData.getMonth() + incrementoMeses);
 
+    const novasInstancias: Prisma.GastoManutencaoCreateManyInput[] = [];
     while (proximaData <= limiteGeracao) {
       if (origem.dataFimRecorrencia && proximaData > origem.dataFimRecorrencia) break;
 
-      await prisma.gastoManutencao.create({
-        data: {
-          imovelId: origem.imovelId,
-          descricao: origem.descricao,
-          categoria: origem.categoria,
-          valor: origem.valor,
-          dataExecucao: new Date(proximaData),
-          prestadorNome: origem.prestadorNome,
-          prestadorDocumento: origem.prestadorDocumento,
-          prestadorTelefone: origem.prestadorTelefone,
-          observacoes: origem.observacoes,
-          origem: origem.origem,
-          status: "orcamento",
-          recorrencia: "unica",
-          manutencaoOrigemId: origem.id,
-        },
+      novasInstancias.push({
+        imovelId: origem.imovelId,
+        descricao: origem.descricao,
+        categoria: origem.categoria,
+        valor: origem.valor,
+        dataExecucao: new Date(proximaData),
+        prestadorNome: origem.prestadorNome,
+        prestadorDocumento: origem.prestadorDocumento,
+        prestadorTelefone: origem.prestadorTelefone,
+        observacoes: origem.observacoes,
+        origem: origem.origem,
+        status: "orcamento",
+        recorrencia: "unica",
+        manutencaoOrigemId: origem.id,
       });
 
       proximaData.setMonth(proximaData.getMonth() + incrementoMeses);
+    }
+
+    if (novasInstancias.length > 0) {
+      await prisma.gastoManutencao.createMany({ data: novasInstancias, skipDuplicates: true });
     }
   }
 }
@@ -120,7 +141,7 @@ export async function criar(data: z.infer<typeof criarGastoManutencaoSchema>, or
 // Edicao completa, para corrigir erros de cadastro - por isso, ao contrario
 // de atualizarStatus(), NAO impede retroceder o status (ex: desfazer um
 // "pago" registrado por engano) nem bloqueia editar um gasto ja pago.
-export async function atualizar(id: string, data: z.infer<typeof atualizarGastoManutencaoSchema>) {
+export async function atualizar(id: string, data: z.infer<typeof atualizarGastoManutencaoSchema>, role: Role) {
   const antes = await buscarPorIdOuFalhar(id);
 
   if (data.imovelId && data.imovelId !== antes.imovelId) {
@@ -129,6 +150,9 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarGastoM
   }
 
   const novoStatus = data.status ?? antes.status;
+  if (data.status) {
+    garantirApenasProprietarioAprova(role, antes.status as StatusManutencao, data.status);
+  }
   const dataExecucaoEfetiva = data.dataExecucao !== undefined ? data.dataExecucao : antes.dataExecucao;
   let dataPagamentoEfetiva = data.dataPagamento !== undefined ? data.dataPagamento : antes.dataPagamento;
   let formaPagamentoEfetiva = data.formaPagamento !== undefined ? data.formaPagamento : antes.formaPagamento;
@@ -156,13 +180,14 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarGastoM
   });
 }
 
-export async function atualizarStatus(id: string, data: z.infer<typeof atualizarStatusManutencaoSchema>) {
+export async function atualizarStatus(id: string, data: z.infer<typeof atualizarStatusManutencaoSchema>, role: Role) {
   const gasto = await buscarPorIdOuFalhar(id);
   const atual = gasto.status as StatusManutencao;
 
   if (ORDEM_STATUS_MANUTENCAO[data.status] < ORDEM_STATUS_MANUTENCAO[atual]) {
     throw new AppError(`Nao e possivel retroceder o status de "${atual}" para "${data.status}"`, 409);
   }
+  garantirApenasProprietarioAprova(role, atual, data.status);
 
   return prisma.gastoManutencao.update({
     where: { id },

@@ -53,7 +53,7 @@ export const atualizar = asyncHandler(async (req, res) => {
   if (data.imovelId && data.imovelId !== antes.imovelId) {
     await garantirAcesso(req, data.imovelId);
   }
-  const gasto = await service.atualizar(paramId(req), data);
+  const gasto = await service.atualizar(paramId(req), data, req.user!.role);
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "UPDATE_GASTO_MANUTENCAO",
@@ -70,7 +70,7 @@ export const atualizarStatus = asyncHandler(async (req, res) => {
   const data = atualizarStatusManutencaoSchema.parse(req.body);
   const antes = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, antes.imovelId);
-  const gasto = await service.atualizarStatus(paramId(req), data);
+  const gasto = await service.atualizarStatus(paramId(req), data, req.user!.role);
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "UPDATE_STATUS_MANUTENCAO",
