@@ -17,7 +17,19 @@ export const app = express();
 // incorreto. "1" = confia exatamente 1 hop de proxy (o da propria Vercel).
 app.set("trust proxy", 1);
 
-app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    // API pura, nunca precisa ser carregada dentro de um <iframe>.
+    frameguard: { action: "deny" },
+  }),
+);
+// Helmet nao inclui Permissions-Policy por padrao - desliga explicitamente
+// apis de hardware que essa API nunca usa.
+app.use((req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());

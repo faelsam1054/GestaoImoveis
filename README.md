@@ -306,28 +306,49 @@ própria com:
 
 ## Segurança
 
-- Senhas armazenadas com **bcrypt** (12 salt rounds)
+- Senhas armazenadas com **bcrypt** (12 salt rounds); senha nova (troca ou
+  redefinição) exige mínimo 8 caracteres com letra e número
 - Autenticação via **JWT de acesso (15 min) + refresh token (7 dias)**; o
-  refresh token fica em cookie `httpOnly`, o access token só em memória no
-  frontend (nunca em `localStorage`)
-- **Rate limiting** nas rotas de login/recuperação de senha (10 tentativas a
-  cada 15 minutos por IP)
+  refresh token fica em cookie `httpOnly` (`secure` + `sameSite=none` em
+  produção), o access token só em memória no frontend (nunca em
+  `localStorage`)
+- **Rate limiting**: login (5 tentativas / 15 min por IP), recuperação de
+  senha (3 tentativas / hora por IP)
 - **RBAC** completo: gate por perfil (`requireRole`) e por permissão granular
   do Administrador (`authorizePermissao`), replicado no frontend para a
   experiência (a validação real acontece sempre no backend)
 - **Log de auditoria** de ações sensíveis (login, criação/edição/exclusão de
   registros, mudança de permissões)
 - **CORS** restrito à origem do frontend (configurável via `CORS_ORIGIN`)
-- Cabeçalhos de segurança via `helmet`
+- Cabeçalhos de segurança via `helmet` no backend (HSTS, X-Content-Type-Options,
+  X-Frame-Options: deny, Permissions-Policy) e via `vercel.json` no frontend
+- Mensagens de erro genéricas ao cliente (`errorMiddleware`); detalhes/stack
+  ficam só no log do servidor
+
+### Row-Level Security (Supabase/Postgres)
+
+RLS está **habilitado em todas as tabelas** (migration
+`enable_row_level_security`), sem nenhuma policy — isso bloqueia por padrão
+qualquer acesso via a API REST pública que o Supabase expõe automaticamente
+para todo projeto (`https://<projeto>.supabase.co/rest/v1/<tabela>`),
+acessível com a chave publishable/anon (não é secreta). O backend continua
+funcionando normalmente porque o Prisma conecta como o role `postgres`
+(super-role do projeto, com `BYPASSRLS`) — toda a autorização por perfil já
+acontece no Express, nos middlewares/services. Este projeto **não** usa
+Supabase Auth nem `supabase-js` para consultar dados (só para Storage), então
+não há policies baseadas em `auth.uid()` — elas não fariam sentido aqui, já
+que nenhum JWT do Supabase Auth é emitido. Se um dia o frontend passar a
+falar com o Supabase diretamente, será necessário revisar isso.
 
 ### HTTPS em produção
 
-Este projeto **não implementa TLS/HTTPS diretamente** — em desenvolvimento local
-isso é normal (`http://localhost`). Em produção, sirva a aplicação **sempre
-atrás de HTTPS**: use um proxy reverso (Nginx, Caddy) ou a terminação TLS do
-seu provedor de hospedagem, e configure `CORS_ORIGIN` para a URL `https://`
-correta do frontend. Sem HTTPS, o cookie do refresh token e o token de acesso
-trafegam sem criptografia — não exponha esta aplicação publicamente sem TLS.
+Em produção (Vercel) o **HTTPS é automático**: certificado válido, renovação
+automática e redirecionamento HTTP → HTTPS por padrão em todos os domínios
+`*.vercel.app` e customizados. A conexão com o Postgres do Supabase já usa
+TLS por padrão (confirmado via `pg_stat_ssl`); `DATABASE_URL`/`DIRECT_URL`
+também incluem `sslmode=require` explicitamente como reforço. Em
+desenvolvimento local isso é normal (`http://localhost`) — só a comunicação
+com o Supabase (banco) roda sobre TLS mesmo localmente.
 
 ## Variáveis de ambiente
 
