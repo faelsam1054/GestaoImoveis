@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { AutoLogoutGuard } from "@/components/auto-logout-guard";
 
 export function ProtectedRoute() {
   const { usuario, carregando } = useAuth();
@@ -17,5 +18,10 @@ export function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <AutoLogoutGuard />
+      <Outlet />
+    </>
+  );
 }

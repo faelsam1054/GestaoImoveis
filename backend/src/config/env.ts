@@ -5,7 +5,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string(),
   JWT_SECRET: z.string().min(10),
   JWT_REFRESH_SECRET: z.string().min(10),
-  JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
+  JWT_ACCESS_EXPIRES_IN: z.string().default("10m"),
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
   PORT: z.coerce.number().default(3333),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -23,7 +23,7 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().default("Gestalugua <no-reply@gestalugua.local>"),
+  SMTP_FROM: z.string().default("ImovelClaro <no-reply@imovelclaro.local>"),
 });
 
 const parsed = envSchema.safeParse(process.env);

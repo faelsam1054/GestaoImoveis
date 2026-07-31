@@ -11,7 +11,7 @@ const SALT_ROUNDS = 12;
 // producao - exatamente 1 usuario Proprietario, pra permitir o primeiro
 // login e cadastro dos demais usuarios.
 async function main() {
-  const emailPadrao = process.env.PROPRIETARIO_PADRAO_EMAIL ?? "admin@gestaoimoveis.com";
+  const emailPadrao = process.env.PROPRIETARIO_PADRAO_EMAIL ?? "admin@imovelclaro.com";
   const senhaPadrao = process.env.PROPRIETARIO_PADRAO_SENHA ?? "Mudar@123";
 
   const existente = await prisma.usuario.findFirst({ where: { role: "proprietario" } });

@@ -1,10 +1,10 @@
 {
-  "name": "Gestalugua",
-  "short_name": "Gestalugua",
-  "description": "Sua carteira de aluguéis organizada",
+  "name": "ImovelClaro",
+  "short_name": "ImovelClaro",
+  "description": "Gestão clara e simples dos seus imóveis",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#4f46e5",
+  "theme_color": "#0ea5e9",
   "background_color": "#ffffff",
   "icons": [
     {

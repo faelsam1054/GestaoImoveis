@@ -1,12 +1,12 @@
-# Gestalugua - Sistema de Gestão de Aluguéis
+# ImovelClaro - Sistema de Gestão de Aluguéis
 
-Sua carteira de aluguéis organizada.
+Gestão clara e simples dos seus imóveis.
 
 > Este projeto é conhecido internamente como GestaoImoveis (nome do repositório).
 
 ## Sobre
 
-O Gestalugua é um sistema web multiusuário para controle de aluguéis de imóveis,
+O ImovelClaro é um sistema web multiusuário para controle de aluguéis de imóveis,
 indicado para proprietários que administram um portfólio de imóveis (diretamente
 ou com apoio de administradores). Principais funcionalidades:
 

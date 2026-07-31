@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { InternalAxiosRequestConfig } from "axios";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { inatividadeExcedida, limparUltimaAtividade, registrarUltimaAtividade } from "@/lib/atividade";
+import { SESSION_CONFIG } from "@/config/session";
 import type { Usuario } from "@/types/auth";
 
 interface AuthContextValue {
@@ -72,8 +75,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     );
 
-    // Bootstrap: tenta restaurar a sessao a partir do cookie httpOnly do refresh token.
-    tentarRefresh().finally(() => setCarregando(false));
+    // Bootstrap: tenta restaurar a sessao a partir do cookie httpOnly do refresh
+    // token - a menos que a ultima atividade registrada (ver use-idle-timer.ts)
+    // ja tenha passado dos 10min, o que cobre o caso de fechar a aba e voltar
+    // depois do prazo (o idle-timer em memoria nao sobrevive ao fechamento).
+    if (inatividadeExcedida(SESSION_CONFIG.TIMEOUT)) {
+      limparUltimaAtividade();
+      api
+        .post("/auth/logout")
+        .catch(() => {})
+        .finally(() => {
+          setCarregando(false);
+          toast.info("Sessão expirada por inatividade");
+        });
+    } else {
+      tentarRefresh().finally(() => setCarregando(false));
+    }
 
     return () => {
       api.interceptors.request.eject(reqInterceptor);
@@ -85,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.post("/auth/login", { email, senha });
     accessTokenRef.current = res.data.accessToken;
     setUsuario(res.data.usuario);
+    registrarUltimaAtividade();
     return res.data.usuario as Usuario;
   }
 
@@ -92,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.post("/auth/logout").catch(() => {});
     accessTokenRef.current = null;
     setUsuario(null);
+    limparUltimaAtividade();
   }
 
   function atualizarUsuario(novoUsuario: Usuario) {

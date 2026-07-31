@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "next-themes";
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, LogOut, Home, UserRound, Moon, Sun, ArrowUp } from "lucide-react";
+import { Menu, LogOut, UserRound, Moon, Sun, ArrowUp } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useContratosPendentesCount } from "@/hooks/use-contratos-pendentes-count";
 import { NotificationBell } from "@/components/notification-bell";
+import { Logo, NOME_APP, TAGLINE_APP } from "@/components/logo";
 import { pageTransition } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -159,15 +160,13 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
     <div className="flex min-h-screen bg-slate-50 transition-colors duration-200 dark:bg-slate-950">
       <aside className="hidden shrink-0 flex-col border-r border-slate-200 bg-white transition-colors duration-200 md:flex md:w-[76px] lg:w-64 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-4 md:justify-center lg:justify-start dark:border-slate-800">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white dark:bg-indigo-500">
-            <Home className="h-[18px] w-[18px]" />
-          </div>
+          <Logo />
           <div className="min-w-0 md:hidden lg:block">
             <span className="block truncate font-heading text-sm font-semibold text-slate-900 dark:text-white">
-              Gestalugua
+              {NOME_APP}
             </span>
             <span className="block text-[11px] leading-tight text-slate-500 dark:text-slate-400">
-              Sua carteira de aluguéis organizada
+              {TAGLINE_APP}
             </span>
           </div>
         </div>
@@ -225,10 +224,8 @@ export function AppShell({ titulo, itensNav }: AppShellProps) {
               </SheetTrigger>
               <SheetContent side="left" className="w-64 gap-0 border-slate-200 bg-white p-0 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
                 <SheetTitle className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-4 text-base text-slate-900 dark:border-slate-800 dark:text-white">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white dark:bg-indigo-500">
-                    <Home className="h-[18px] w-[18px]" />
-                  </div>
-                  Gestalugua
+                  <Logo />
+                  {NOME_APP}
                 </SheetTitle>
                 <div className="py-4">
                   <NavLista itens={itensNav} onNavigate={() => setMenuAberto(false)} />

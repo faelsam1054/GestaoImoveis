@@ -227,7 +227,7 @@ async function notificarProprietariosContratoPendente(
     for (const proprietario of proprietarios) {
       await enviarEmail({
         destinatario: proprietario.email,
-        assunto: "[Gestalugua] Novo contrato aguardando aprovação",
+        assunto: "[ImovelClaro] Novo contrato aguardando aprovação",
         corpo,
       });
     }

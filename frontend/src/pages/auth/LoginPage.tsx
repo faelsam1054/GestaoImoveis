@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Home, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { NOME_APP, TAGLINE_APP } from "@/components/logo";
 import { mensagemErro } from "@/lib/api-client";
 import { rotaInicial } from "@/lib/nav";
 import { scaleIn, staggerContainer, staggerItem, fadeIn, EASE_OUT } from "@/lib/animations";
@@ -68,7 +69,7 @@ export function LoginPage() {
               variants={staggerItem}
               initial="hidden"
               animate="visible"
-              className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm"
+              className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-sm dark:bg-sky-400 dark:text-slate-950"
             >
               <AnimatePresence mode="wait" initial={false}>
                 {sucesso ? (
@@ -87,14 +88,14 @@ export function LoginPage() {
                 )}
               </AnimatePresence>
             </motion.div>
-            <CardTitle className="text-2xl">Gestalugua</CardTitle>
+            <CardTitle className="text-2xl">{NOME_APP}</CardTitle>
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3, delay: 0.2, ease: EASE_OUT }}
               className="text-sm text-slate-600 dark:text-slate-400"
             >
-              Sua carteira de aluguéis organizada
+              {TAGLINE_APP}
             </motion.p>
             <CardDescription>Entre com seu email e senha</CardDescription>
           </CardHeader>

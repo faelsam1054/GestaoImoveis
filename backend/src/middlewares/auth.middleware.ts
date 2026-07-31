@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { TokenExpiredError } from "jsonwebtoken";
 import { verifyAccessToken } from "../utils/jwt";
 import { AppError } from "../utils/AppError";
 import { prisma } from "../lib/prisma";
@@ -18,8 +19,13 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     let payload;
     try {
       payload = verifyAccessToken(token);
-    } catch {
-      throw new AppError("Token de acesso invalido ou expirado", 401);
+    } catch (err) {
+      // Codigo especifico para expiracao: permite ao frontend distinguir
+      // "tenta refresh silencioso" de outros 401 (token ausente/invalido).
+      if (err instanceof TokenExpiredError) {
+        throw new AppError("Token de acesso expirado", 401, undefined, "TOKEN_EXPIRED");
+      }
+      throw new AppError("Token de acesso invalido", 401);
     }
     if (payload.tipo !== "access") {
       throw new AppError("Token invalido", 401);

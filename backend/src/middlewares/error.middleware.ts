@@ -7,7 +7,7 @@ import { AppError } from "../utils/AppError";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const errorMiddleware: ErrorRequestHandler = (err, req, res, next) => {
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ erro: err.message, detalhes: err.details });
+    res.status(err.statusCode).json({ erro: err.message, detalhes: err.details, codigo: err.codigo });
     return;
   }
 
