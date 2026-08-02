@@ -5,7 +5,10 @@
 export const STATUS_IMOVEL = ["vago", "alugado", "manutencao", "inativo"] as const;
 export const STATUS_CONTRATO = ["pendente_aprovacao", "ativo", "rejeitado", "encerrado"] as const;
 export const TIPO_PAGAMENTO = ["aluguel", "caucao", "multa", "outro"] as const;
-export const STATUS_PAGAMENTO = ["pendente", "pago", "atrasado"] as const;
+// "cancelado": pagamento futuro pre-gerado (ver gerarPagamentosDoContrato)
+// cujo contrato foi encerrado/renovado antes desse mes ser cobrado - nunca
+// sera cobrado de verdade, mas o registro fica (nao e apagado) para auditoria.
+export const STATUS_PAGAMENTO = ["pendente", "pago", "atrasado", "cancelado"] as const;
 export const FORMA_PAGAMENTO = ["pix", "transferencia", "dinheiro", "boleto", "outro"] as const;
 export const CATEGORIA_MANUTENCAO = [
   "pintura",

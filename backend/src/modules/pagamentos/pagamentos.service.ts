@@ -118,6 +118,9 @@ export async function atualizar(id: string, data: z.infer<typeof atualizarPagame
   if (pagamento.status === "pago") {
     throw new AppError("Nao e possivel editar um pagamento ja quitado", 409);
   }
+  if (pagamento.status === "cancelado") {
+    throw new AppError("Nao e possivel editar um pagamento cancelado (contrato encerrado/renovado)", 409);
+  }
   return prisma.pagamento.update({ where: { id }, data, include: includePadrao });
 }
 
@@ -125,6 +128,9 @@ export async function marcarComoPago(id: string, data: z.infer<typeof marcarPago
   const pagamento = await buscarPorIdOuFalhar(id);
   if (pagamento.status === "pago") {
     throw new AppError("Este pagamento ja esta marcado como pago", 409);
+  }
+  if (pagamento.status === "cancelado") {
+    throw new AppError("Nao e possivel pagar um pagamento cancelado (contrato encerrado/renovado)", 409);
   }
 
   const dataPagamento = data.dataPagamento ?? new Date();

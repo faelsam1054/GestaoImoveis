@@ -18,11 +18,18 @@ export async function financeiro(meses = 12) {
 
   const [receitaPrevistaPorMes, receitaRecebidaPorMes, despesaAdminPorMes, gastosManutencaoPagos] =
     await Promise.all([
-      // tipo: "aluguel" - caucao e deposito de garantia, nao receita (ver
-      // dashboard.service.ts para o mesmo criterio).
+      // tipo: "aluguel" - caucao e deposito de garantia, nao receita. Pago
+      // sempre conta; pendente/atrasado so conta se o contrato ainda esta
+      // ativo (mesmo criterio e mesmo motivo de dashboard.service.ts:
+      // Pagamento futuro pre-gerado de contrato ja encerrado/rejeitado nunca
+      // sera cobrado e nao deveria aparecer como receita prevista).
       prisma.pagamento.groupBy({
         by: ["competencia"],
-        where: { competencia: { in: competencias }, tipo: "aluguel" },
+        where: {
+          competencia: { in: competencias },
+          tipo: "aluguel",
+          OR: [{ status: "pago" }, { status: { in: ["pendente", "atrasado"] }, contrato: { status: "ativo" } }],
+        },
         _sum: { valorPrevisto: true },
       }),
       prisma.pagamento.groupBy({

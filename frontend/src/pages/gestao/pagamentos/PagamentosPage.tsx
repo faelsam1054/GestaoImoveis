@@ -470,7 +470,7 @@ export function PagamentosPage() {
                       <StatusBadge status={pagamento.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      {podeRegistrar && pagamento.status !== "pago" && (
+                      {podeRegistrar && pagamento.status !== "pago" && pagamento.status !== "cancelado" && (
                         <Button variant="outline" size="sm" onClick={() => abrirPagar(pagamento)}>
                           Marcar como pago
                         </Button>
@@ -533,7 +533,7 @@ export function PagamentosPage() {
                   value={formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}
                 />
                 <MobileRowActions>
-                  {podeRegistrar && pagamento.status !== "pago" && (
+                  {podeRegistrar && pagamento.status !== "pago" && pagamento.status !== "cancelado" && (
                     <Button variant="outline" size="sm" onClick={() => abrirPagar(pagamento)}>
                       Marcar como pago
                     </Button>

@@ -95,7 +95,7 @@ export function DashboardPage() {
               value={formatarMoeda(resumo.financeiro.receitaEsperadaMes)}
               animateValue={resumo.financeiro.receitaEsperadaMes}
               formatarValor={formatarMoeda}
-              tooltip="Soma dos aluguéis previstos no mês. Caução não incluída."
+              tooltip="Soma dos aluguéis pendentes de contratos ativos, mais os já pagos no mês. Caução e contratos encerrados não incluídos."
             />
             <StatTile
               label="Inadimplência"

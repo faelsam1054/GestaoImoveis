@@ -396,6 +396,21 @@ async function liberarImovelSeSemContratoAtivo(tx: Prisma.TransactionClient, imo
   }
 }
 
+// gerarPagamentosDoContrato() pre-gera TODOS os pagamentos mensais do
+// contrato de uma vez (dataInicio ate dataFim), no momento da criacao. Ao
+// encerrar (ou renovar, para o contrato anterior) antes do dataFim natural,
+// os pagamentos futuros que ainda nao foram cobrados ficariam orfaos, para
+// sempre "pendente"/"atrasado" - nunca serao cobrados de verdade (o
+// inquilino nao mora mais no imovel), mas continuavam contando como receita
+// esperada. Cancela-os aqui em vez de apagar (mantem o registro/auditoria de
+// que aquele mes foi pre-gerado e depois cancelado).
+async function cancelarPagamentosFuturosPendentes(tx: Prisma.TransactionClient, contratoId: string) {
+  await tx.pagamento.updateMany({
+    where: { contratoId, status: { in: ["pendente", "atrasado"] } },
+    data: { status: "cancelado" },
+  });
+}
+
 export async function encerrar(id: string, quebraContratoUrl?: string) {
   const contrato = await buscarPorIdOuFalhar(id);
   if (contrato.status !== "ativo") {
@@ -407,6 +422,7 @@ export async function encerrar(id: string, quebraContratoUrl?: string) {
       where: { id },
       data: { status: "encerrado", quebraContratoUrl },
     });
+    await cancelarPagamentosFuturosPendentes(tx, id);
     await liberarImovelSeSemContratoAtivo(tx, contrato.imovelId);
     return atualizado;
   });
@@ -422,6 +438,7 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
     // Renovar equivale a encerrar o contrato atual e comecar um novo
     // (nao ha mais um status "renovado" distinto - ver AJUSTE 1 do polimento).
     await tx.contrato.update({ where: { id }, data: { status: "encerrado" } });
+    await cancelarPagamentosFuturosPendentes(tx, id);
 
     const novoContrato = await tx.contrato.create({
       data: {

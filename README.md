@@ -245,6 +245,23 @@ vencimentos", "Pagamentos atrasados" e "Manutenções pendentes". A mensalidade
 de administrador é a única métrica financeira do dashboard que não passa por
 esse filtro (não é vinculada a um imóvel específico).
 
+**Receita esperada considera apenas contratos ativos**: pagamentos já `pago`
+sempre contam (dinheiro recebido de verdade, independente do que aconteceu com
+o contrato depois). Pagamentos `pendente`/`atrasado` só contam como receita
+esperada se o contrato ainda está `ativo` — contratos `encerrado`/`rejeitado`
+têm parcelas futuras pré-geradas na criação do contrato (todo o intervalo
+`dataInicio`→`dataFim` é gerado de uma vez, ver `gerarPagamentosDoContrato`)
+que nunca serão cobradas após o encerramento e ficariam órfãs, inflando a
+métrica indefinidamente se não fossem filtradas. Mesmo critério em
+`GET /relatorios/financeiro`. Caução (`Pagamento.tipo="caucao"`) nunca entra em
+nenhuma métrica de receita — ver seção de Contratos.
+
+Além do filtro nas métricas, **encerrar (ou renovar) um contrato cancela
+automaticamente** qualquer `Pagamento` seu ainda `pendente`/`atrasado`
+(`status` vira `cancelado`) — o registro não é apagado (fica para auditoria/
+histórico), só passa a ser ignorado em toda cobrança e métrica futura. Um
+pagamento `cancelado` não pode mais ser editado nem marcado como pago.
+
 ### Contratos
 
 Um contrato tem um único campo de estado (`status`): `pendente_aprovacao` →

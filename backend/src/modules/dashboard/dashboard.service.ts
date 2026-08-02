@@ -49,8 +49,21 @@ export async function resumo() {
     await Promise.all([
       // tipo: "aluguel" - caucao (tipo="caucao") e deposito de garantia, nao
       // receita do proprietario; nunca deve entrar nos KPIs financeiros.
+      //
+      // Regra de "receita esperada": pagamento ja PAGO sempre conta (dinheiro
+      // real, ja recebido, independente do que aconteceu com o contrato
+      // depois). Pagamento PENDENTE/ATRASADO so conta se o contrato ainda
+      // esta ATIVO - contratos encerrados/rejeitados tem Pagamento futuros
+      // pre-gerados na criacao do contrato (ver gerarPagamentosDoContrato)
+      // que nunca serao cobrados apos o encerramento e ficam orfaos no banco
+      // com status="pendente" para sempre, inflando a receita esperada.
       prisma.pagamento.aggregate({
-        where: { competencia: competenciaAtual, tipo: "aluguel", contrato: { imovel: imovelAtivoEVisivel } },
+        where: {
+          competencia: competenciaAtual,
+          tipo: "aluguel",
+          contrato: { imovel: imovelAtivoEVisivel },
+          OR: [{ status: "pago" }, { status: { in: ["pendente", "atrasado"] }, contrato: { status: "ativo" } }],
+        },
         _sum: { valorPrevisto: true },
       }),
       prisma.pagamento.aggregate({
@@ -84,7 +97,7 @@ export async function resumo() {
       where: {
         status: "pendente",
         dataVencimento: { gte: hoje, lte: em7dias },
-        contrato: { imovel: imovelAtivoEVisivel },
+        contrato: { status: "ativo", imovel: imovelAtivoEVisivel },
       },
       include: includeListaPagamento,
       orderBy: { dataVencimento: "asc" },
