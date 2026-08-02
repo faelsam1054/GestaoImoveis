@@ -54,7 +54,11 @@ function AbaFinanceiro() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Receita = aluguéis. Caução é tratada separadamente por ser valor de garantia, não receita recorrente — veja
+          na tela de detalhe de cada contrato.
+        </p>
         <BotaoExportar caminho="/relatorios/financeiro" nomeArquivo="relatorio-financeiro" pdf />
       </div>
       <Card>

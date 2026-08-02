@@ -27,7 +27,7 @@ import {
   type StatusManutencao,
   type RecorrenciaManutencao,
 } from "@/types/domain";
-import { formatarMoeda, formatarDataHora, formatarTamanhoArquivo, paraInputData } from "@/lib/format";
+import { formatarMoeda, formatarData, formatarDataHora, formatarTamanhoArquivo, paraInputData } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -348,6 +348,7 @@ export function ManutencaoPage() {
                   <TableHead>Imóvel</TableHead>
                   <TableHead>Descrição</TableHead>
                   <TableHead>Categoria</TableHead>
+                  <TableHead>Data de execução</TableHead>
                   <TableHead>Origem</TableHead>
                   <TableHead>Valor</TableHead>
                   <TableHead>Status</TableHead>
@@ -366,6 +367,7 @@ export function ManutencaoPage() {
                       </TableCell>
                       <TableCell>{gasto.descricao}</TableCell>
                       <TableCell className="capitalize">{gasto.categoria}</TableCell>
+                      <TableCell>{formatarData(gasto.dataExecucao)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {gasto.origem === "chamado_inquilino" ? "Chamado do inquilino" : "Proprietário"}
                       </TableCell>
@@ -469,6 +471,7 @@ export function ManutencaoPage() {
                     <StatusBadge status={gasto.status} />
                   </MobileRowCardHeader>
                   <MobileRowField label="Categoria" value={<span className="capitalize">{gasto.categoria}</span>} />
+                  <MobileRowField label="Data de execução" value={formatarData(gasto.dataExecucao)} />
                   <MobileRowField
                     label="Origem"
                     value={gasto.origem === "chamado_inquilino" ? "Chamado do inquilino" : "Proprietário"}

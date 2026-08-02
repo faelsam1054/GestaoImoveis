@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, animate, useReducedMotion } from "framer-motion";
+import { Info } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { staggerItem, EASE_OUT } from "@/lib/animations";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +48,7 @@ export function StatTile({
   tone = "default",
   animateValue,
   formatarValor,
+  tooltip,
 }: {
   label: string;
   value: string;
@@ -55,6 +58,8 @@ export function StatTile({
   animateValue?: number;
   /** Formata o numero interpolado a cada frame da contagem (ex: formatarMoeda). */
   formatarValor?: (n: number) => string;
+  /** Texto explicativo, exibido num icone de info ao lado do label. */
+  tooltip?: string;
 }) {
   const contador = useCountUp(animateValue);
   const reduzido = useReducedMotion();
@@ -77,7 +82,17 @@ export function StatTile({
             </motion.div>
           )}
           <div className="flex min-w-0 flex-col gap-0.5">
-            <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+            <div className="flex items-center gap-1">
+              <p className="truncate text-sm font-medium text-muted-foreground">{label}</p>
+              {tooltip && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent>{tooltip}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
             <p className={cn("text-2xl leading-tight font-semibold tracking-tight text-balance", TONE_VALUE[tone])}>
               {valorExibido}
             </p>

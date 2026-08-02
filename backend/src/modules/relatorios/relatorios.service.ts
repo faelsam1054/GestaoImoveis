@@ -18,14 +18,16 @@ export async function financeiro(meses = 12) {
 
   const [receitaPrevistaPorMes, receitaRecebidaPorMes, despesaAdminPorMes, gastosManutencaoPagos] =
     await Promise.all([
+      // tipo: "aluguel" - caucao e deposito de garantia, nao receita (ver
+      // dashboard.service.ts para o mesmo criterio).
       prisma.pagamento.groupBy({
         by: ["competencia"],
-        where: { competencia: { in: competencias } },
+        where: { competencia: { in: competencias }, tipo: "aluguel" },
         _sum: { valorPrevisto: true },
       }),
       prisma.pagamento.groupBy({
         by: ["competencia"],
-        where: { competencia: { in: competencias }, status: "pago" },
+        where: { competencia: { in: competencias }, tipo: "aluguel", status: "pago" },
         _sum: { valorPago: true },
       }),
       prisma.pagamentoAdministrador.groupBy({
@@ -76,7 +78,7 @@ export async function financeiro(meses = 12) {
 export async function porImovel() {
   const imoveis = await prisma.imovel.findMany({
     include: {
-      contratos: { include: { pagamentos: { where: { status: "pago" } } } },
+      contratos: { include: { pagamentos: { where: { status: "pago", tipo: "aluguel" } } } },
       gastosManutencao: { where: { status: "pago" } },
     },
     orderBy: { logradouro: "asc" },

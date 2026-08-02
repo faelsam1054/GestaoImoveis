@@ -47,12 +47,19 @@ export async function resumo() {
 
   const [receitaEsperadaAgg, receitaRecebidaAgg, despesaManutencaoAgg, despesaAdminAgg, inadimplenciaAgg] =
     await Promise.all([
+      // tipo: "aluguel" - caucao (tipo="caucao") e deposito de garantia, nao
+      // receita do proprietario; nunca deve entrar nos KPIs financeiros.
       prisma.pagamento.aggregate({
-        where: { competencia: competenciaAtual, contrato: { imovel: imovelAtivoEVisivel } },
+        where: { competencia: competenciaAtual, tipo: "aluguel", contrato: { imovel: imovelAtivoEVisivel } },
         _sum: { valorPrevisto: true },
       }),
       prisma.pagamento.aggregate({
-        where: { competencia: competenciaAtual, status: "pago", contrato: { imovel: imovelAtivoEVisivel } },
+        where: {
+          competencia: competenciaAtual,
+          tipo: "aluguel",
+          status: "pago",
+          contrato: { imovel: imovelAtivoEVisivel },
+        },
         _sum: { valorPago: true },
       }),
       prisma.gastoManutencao.aggregate({
@@ -130,7 +137,12 @@ export async function graficoReceitasDespesas() {
   const [receitasPorMes, despesasAdminPorMes, gastosManutencaoPagos] = await Promise.all([
     prisma.pagamento.groupBy({
       by: ["competencia"],
-      where: { competencia: { in: meses }, status: "pago", contrato: { imovel: imovelAtivoEVisivel } },
+      where: {
+        competencia: { in: meses },
+        tipo: "aluguel",
+        status: "pago",
+        contrato: { imovel: imovelAtivoEVisivel },
+      },
       _sum: { valorPago: true },
     }),
     // Mensalidade de administrador nao e vinculada a um imovel especifico -

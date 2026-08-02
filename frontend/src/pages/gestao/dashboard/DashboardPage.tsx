@@ -52,6 +52,7 @@ export function DashboardPage() {
               formatarValor={formatarMoeda}
               icon={<TrendingUp className="h-5 w-5" />}
               tone="success"
+              tooltip="Soma dos aluguéis recebidos no mês. Caução não incluída."
             />
             <StatTile
               label="Despesas (mês)"
@@ -94,6 +95,7 @@ export function DashboardPage() {
               value={formatarMoeda(resumo.financeiro.receitaEsperadaMes)}
               animateValue={resumo.financeiro.receitaEsperadaMes}
               formatarValor={formatarMoeda}
+              tooltip="Soma dos aluguéis previstos no mês. Caução não incluída."
             />
             <StatTile
               label="Inadimplência"
@@ -108,6 +110,7 @@ export function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>Receitas x Despesas (últimos 12 meses)</CardTitle>
+          <p className="text-xs text-muted-foreground">Receita = aluguéis recebidos. Caução não incluída.</p>
         </CardHeader>
         <CardContent>
           {carregandoGrafico || !grafico ? (
