@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { atualizarAtrasados } from "../pagamentos/pagamentos.service";
+import { whereManutencoesPendentes } from "../manutencao/manutencao.service";
 
 function competenciaDe(data: Date): string {
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
@@ -109,8 +110,12 @@ export async function resumo() {
       orderBy: { dataVencimento: "asc" },
       take: 10,
     }),
+    // Reaproveita a definicao de "pendente" do modulo de Manutencao (status +
+    // nao excluido - era exatamente esse "nao excluido" que faltava aqui e
+    // inflava a contagem com gastos ja apagados) somado ao filtro de imovel
+    // ativo/visivel que todo o resto do dashboard ja aplica.
     prisma.gastoManutencao.findMany({
-      where: { status: { in: ["orcamento", "aprovado"] }, imovel: imovelAtivoEVisivel },
+      where: { ...whereManutencoesPendentes(), imovel: imovelAtivoEVisivel },
       include: { imovel: { select: { logradouro: true, numero: true } } },
       orderBy: { createdAt: "desc" },
       take: 10,

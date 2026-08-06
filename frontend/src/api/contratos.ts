@@ -14,6 +14,12 @@ export interface ContratoInput {
 
 export type RenovarContratoInput = Omit<ContratoInput, "imovelId" | "inquilinoId">;
 
+export interface AtualizarValoresContratoInput {
+  valorAluguel?: number;
+  diaVencimento?: number;
+  atualizarPagamentosFuturos?: boolean;
+}
+
 export interface FiltrosContrato {
   status?: StatusContrato;
   imovelId?: string;
@@ -50,6 +56,19 @@ export async function encerrarContrato(id: string, arquivoQuebra?: File): Promis
 
 export async function renovarContrato(id: string, input: RenovarContratoInput): Promise<Contrato> {
   const { data } = await api.post(`/contratos/${id}/renovar`, input);
+  return data;
+}
+
+export async function atualizarValoresContrato(id: string, input: AtualizarValoresContratoInput): Promise<Contrato> {
+  const { data } = await api.patch(`/contratos/${id}/valores`, input);
+  return data;
+}
+
+export async function atualizarPagamentosLote(
+  id: string,
+  mesInicio: string,
+): Promise<{ pagamentosAtualizados: number; valorAplicado: number }> {
+  const { data } = await api.post(`/contratos/${id}/atualizar-pagamentos`, { mesInicio });
   return data;
 }
 

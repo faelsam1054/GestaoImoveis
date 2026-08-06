@@ -38,6 +38,10 @@ export function paraInputData(data: string | null | undefined): string {
   return data.slice(0, 10);
 }
 
+export function hojeInputData(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function formatarTamanhoArquivo(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined) return "-";
   if (bytes < 1024) return `${bytes} B`;

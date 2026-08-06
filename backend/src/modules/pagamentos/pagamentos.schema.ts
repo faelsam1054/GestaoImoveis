@@ -18,7 +18,10 @@ export const atualizarPagamentoSchema = z.object({
 
 export const marcarPagoSchema = z.object({
   valorPago: z.number().positive(),
-  dataPagamento: z.coerce.date().optional(),
+  dataPagamento: z.coerce
+    .date()
+    .refine((data) => data.getTime() <= Date.now(), "A data de pagamento não pode ser futura")
+    .optional(),
   formaPagamento: z.enum(FORMA_PAGAMENTO),
   observacoes: z.string().optional(),
 });

@@ -7,6 +7,8 @@ import {
   renovarContratoSchema,
   listarContratosQuerySchema,
   rejeitarContratoSchema,
+  atualizarValoresContratoSchema,
+  atualizarPagamentosLoteSchema,
 } from "./contratos.schema";
 import { registrarAuditoria, getClientIp } from "../../middlewares/audit.middleware";
 import { enviarArquivo, baixarArquivo } from "../../lib/storage";
@@ -138,6 +140,41 @@ export const renovar = asyncHandler(async (req, res) => {
     ip: getClientIp(req),
   });
   res.status(201).json(novoContrato);
+});
+
+export const atualizarValores = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  const data = atualizarValoresContratoSchema.parse(req.body);
+  const contrato = await service.atualizarValores(paramId(req), data);
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "ATUALIZAR_VALORES_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: contrato.id,
+    dadosAntes: { valorAluguel: existente.valorAluguel, diaVencimento: existente.diaVencimento },
+    dadosDepois: {
+      valorAluguel: contrato.valorAluguel,
+      diaVencimento: contrato.diaVencimento,
+      atualizarPagamentosFuturos: data.atualizarPagamentosFuturos,
+    },
+    ip: getClientIp(req),
+  });
+  res.json(contrato);
+});
+
+export const atualizarPagamentosLote = asyncHandler(async (req, res) => {
+  const existente = await service.buscarPorIdOuFalhar(paramId(req));
+  const { mesInicio } = atualizarPagamentosLoteSchema.parse(req.body);
+  const resultado = await service.atualizarPagamentosEmLote(paramId(req), { mesInicio });
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "ATUALIZAR_PAGAMENTOS_LOTE_CONTRATO",
+    entidade: "Contrato",
+    entidadeId: existente.id,
+    dadosDepois: { mesInicio, ...resultado },
+    ip: getClientIp(req),
+  });
+  res.json(resultado);
 });
 
 export const anexarContratoAssinado = asyncHandler(async (req, res) => {

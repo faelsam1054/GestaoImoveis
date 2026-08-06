@@ -34,6 +34,8 @@ router.patch(
   controller.encerrar,
 );
 router.post("/:id/renovar", authorizePermissao("podeEditarContratos"), controller.renovar);
+router.patch("/:id/valores", requireRole("proprietario"), controller.atualizarValores);
+router.post("/:id/atualizar-pagamentos", requireRole("proprietario"), controller.atualizarPagamentosLote);
 router.post(
   "/:id/contrato-assinado",
   authorizePermissao("podeEditarContratos"),

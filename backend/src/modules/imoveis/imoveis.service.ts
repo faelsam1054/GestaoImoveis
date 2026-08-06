@@ -62,7 +62,10 @@ export async function buscarPorIdOuFalhar(id: string) {
           pagamentos: { orderBy: { dataVencimento: "desc" } },
         },
       },
-      gastosManutencao: { orderBy: { createdAt: "desc" } },
+      // excluidoEm: null - mesmo filtro de soft delete que o menu de
+      // Manutencoes aplica por padrao (ver manutencao.service.ts:listar).
+      // Sem isso, gastos ja excluidos aparecem no historico do imovel.
+      gastosManutencao: { where: { excluidoEm: null }, orderBy: { createdAt: "desc" } },
     },
   });
   if (!imovel) throw new AppError("Imovel nao encontrado", 404);

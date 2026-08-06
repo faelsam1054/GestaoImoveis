@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Paperclip, Pencil, Trash2, Wrench, Eye, FileText, Download, RefreshCw } from "lucide-react";
 import {
@@ -85,7 +85,11 @@ export function ManutencaoPage() {
   const queryClient = useQueryClient();
   const inputComprovanteRef = useRef<HTMLInputElement>(null);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [statusFiltro, setStatusFiltro] = useState<string>("todos");
+  const [imovelIdFiltro, setImovelIdFiltro] = useState<string | undefined>(
+    searchParams.get("imovelId") ?? undefined,
+  );
   const [dialogAberto, setDialogAberto] = useState(false);
   const [editando, setEditando] = useState<GastoManutencao | null>(null);
   const [form, setForm] = useState<FormManutencao>(FORM_VAZIO);
@@ -95,15 +99,30 @@ export function ManutencaoPage() {
   const [excluindo, setExcluindo] = useState<GastoManutencao | null>(null);
 
   const { data: resultado, isLoading } = useQuery({
-    queryKey: ["manutencao", statusFiltro],
+    queryKey: ["manutencao", statusFiltro, imovelIdFiltro],
     queryFn: () =>
-      listarManutencao({ status: statusFiltro === "todos" ? undefined : (statusFiltro as GastoManutencao["status"]) }),
+      listarManutencao({
+        status: statusFiltro === "todos" ? undefined : (statusFiltro as GastoManutencao["status"]),
+        imovelId: imovelIdFiltro,
+      }),
   });
+
+  function selecionarImovelFiltro(valor: string) {
+    const novoImovelId = valor === "todos" ? undefined : valor;
+    setImovelIdFiltro(novoImovelId);
+    setSearchParams(
+      (params) => {
+        if (novoImovelId) params.set("imovelId", novoImovelId);
+        else params.delete("imovelId");
+        return params;
+      },
+      { replace: true },
+    );
+  }
 
   const { data: imoveisResultado } = useQuery({
     queryKey: ["imoveis", "todos-para-manutencao"],
     queryFn: () => listarImoveis({}),
-    enabled: dialogAberto,
   });
 
   function invalidar() {
@@ -297,20 +316,37 @@ export function ManutencaoPage() {
         }
       />
 
-      <div className="mb-4 max-w-xs">
-        <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-          <SelectTrigger>
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Todos os status</SelectItem>
-            {STATUS_MANUTENCAO.map((s) => (
-              <SelectItem key={s} value={s} className="capitalize">
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex flex-wrap gap-3">
+        <div className="w-full max-w-xs">
+          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os status</SelectItem>
+              {STATUS_MANUTENCAO.map((s) => (
+                <SelectItem key={s} value={s} className="capitalize">
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full max-w-xs">
+          <Select value={imovelIdFiltro ?? "todos"} onValueChange={selecionarImovelFiltro}>
+            <SelectTrigger>
+              <SelectValue placeholder="Imóvel" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os imóveis</SelectItem>
+              {imoveisResultado?.dados.map((imovel) => (
+                <SelectItem key={imovel.id} value={imovel.id}>
+                  {imovel.logradouro}, {imovel.numero}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <input

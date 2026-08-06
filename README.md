@@ -245,6 +245,20 @@ vencimentos", "Pagamentos atrasados" e "Manutenções pendentes". A mensalidade
 de administrador é a única métrica financeira do dashboard que não passa por
 esse filtro (não é vinculada a um imóvel específico).
 
+**"Manutenções pendentes" usa a mesma definição do menu de Manutenções**:
+`status IN ('orcamento', 'aprovado')` (aguardando execução/aprovação) e
+`excluidoEm: null` (nunca conta gasto excluído/soft-deleted) — via o helper
+`whereManutencoesPendentes()` em `manutencao.service.ts`, reaproveitado pelo
+dashboard. Esse `excluidoEm: null` estava faltando na query do dashboard: em
+produção isso fazia o card contar gastos de manutenção já excluídos (em um
+caso real, 13 registros de teste apagados apareciam como "pendentes", contra
+1 real). O dashboard soma a isso o filtro de imóvel ativo/visível de toda a
+página (acima) — o menu de Manutenções, por padrão, não filtra por isso, então
+um gasto pendente de um imóvel excluído/inativo pode aparecer no menu mas não
+no dashboard (nenhum caso assim existe hoje em produção). "Pendente" não inclui
+`executado` sem pagamento — essa é uma métrica diferente (contas a pagar), não
+tratada neste card.
+
 **Receita esperada considera apenas contratos ativos**: pagamentos já `pago`
 sempre contam (dinheiro recebido de verdade, independente do que aconteceu com
 o contrato depois). Pagamentos `pendente`/`atrasado` só contam como receita
@@ -291,6 +305,17 @@ própria com:
 - **Aprovação** (ver seção acima) e **exclusão definitiva**, só permitida sem
   pagamentos/parcelas de caução vinculados — na prática, restrita a contratos
   pendentes ou rejeitados.
+- **Edição de valor do aluguel e dia de vencimento** (`PATCH /contratos/:id/valores`),
+  restrita ao Proprietário e só em contratos `ativo` — diferente de renovar,
+  não cria um novo contrato. Opcionalmente (checkbox "Aplicar aos pagamentos
+  futuros já gerados", desmarcado por padrão) o novo valor do aluguel também é
+  aplicado aos `Pagamento` tipo `aluguel` que ainda estão `pendente` e vencem
+  a partir de hoje; pagamentos já pagos, atrasados ou cancelados nunca são
+  alterados por essa via. Existe também `POST /contratos/:id/atualizar-pagamentos`
+  (Proprietário, `{ mesInicio: "YYYY-MM" }`) para reaplicar o valor atual do
+  contrato retroativamente a partir de uma competência, cobrindo também
+  pagamentos já `atrasado` — pensado para corrigir lotes que ficaram com o
+  valor errado, sem UI dedicada ainda.
 
 ### Manutenção
 
@@ -310,6 +335,16 @@ própria com:
   excluir uma não afeta as outras. A recorrência pode ser pausada/retomada a
   qualquer momento na tela de detalhe, que também lista todas as ocorrências
   já geradas.
+- **Filtro por imóvel** (Select, igual ao de Pagamentos), que também aceita vir
+  pré-selecionado via `?imovelId=...` na URL — usado pelo link "Ver todas as
+  manutenções deste imóvel" na tela de detalhe do imóvel.
+- O histórico de manutenção na tela de detalhe do imóvel (`imovel.gastosManutencao`)
+  usa o mesmo filtro de soft delete do menu de Manutenções (`excluidoEm: null`).
+  Esse filtro estava ausente até esta correção — o include em
+  `imoveis.service.ts` não tinha `where` nenhum, então gastos já excluídos
+  (e, por consequência, o total gasto com manutenção do imóvel, se algum
+  excluído estivesse marcado `pago`) apareciam ali mesmo já removidos do
+  sistema.
 
 ### Pagamentos
 

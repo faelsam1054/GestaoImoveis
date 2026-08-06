@@ -176,8 +176,11 @@ export function ImovelDetalhePage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Histórico de manutenção</CardTitle>
+          <Link to={`/manutencao?imovelId=${imovel.id}`} className="text-xs text-primary hover:underline">
+            Ver todas as manutenções deste imóvel →
+          </Link>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -185,6 +188,7 @@ export function ImovelDetalhePage() {
               <TableRow>
                 <TableHead>Descrição</TableHead>
                 <TableHead>Categoria</TableHead>
+                <TableHead>Data de execução</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
@@ -192,7 +196,7 @@ export function ImovelDetalhePage() {
             <TableBody>
               {(!imovel.gastosManutencao || imovel.gastosManutencao.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
                     Nenhum gasto de manutenção registrado.
                   </TableCell>
                 </TableRow>
@@ -201,6 +205,7 @@ export function ImovelDetalhePage() {
                 <TableRow key={gasto.id}>
                   <TableCell>{gasto.descricao}</TableCell>
                   <TableCell className="capitalize">{gasto.categoria}</TableCell>
+                  <TableCell>{formatarData(gasto.dataExecucao)}</TableCell>
                   <TableCell>{formatarMoeda(gasto.valor)}</TableCell>
                   <TableCell>
                     <StatusBadge status={gasto.status} />

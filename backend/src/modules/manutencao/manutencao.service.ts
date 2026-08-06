@@ -94,6 +94,16 @@ async function gerarProximasRecorrencias() {
   }
 }
 
+// Definicao unica de "manutencao pendente": aguardando execucao ou aprovacao
+// (orcamento/aprovado), nao excluida. Usado tanto pelo dashboard quanto por
+// qualquer outra tela que precise da mesma contagem/lista - garante que
+// "pendente" sempre significa a mesma coisa em todo o sistema. De proposito
+// sem filtro de imovel (excluido/inativo): mesmo comportamento da listagem
+// padrao do menu de Manutencoes, que tambem nao filtra por isso.
+export function whereManutencoesPendentes(): Prisma.GastoManutencaoWhereInput {
+  return { status: { in: ["orcamento", "aprovado"] }, excluidoEm: null };
+}
+
 export async function listar(filtros: FiltrosManutencao) {
   await gerarProximasRecorrencias();
   const paginacao = parsePaginacao(filtros);

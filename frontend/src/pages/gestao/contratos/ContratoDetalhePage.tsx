@@ -2,8 +2,14 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack } from "lucide-react";
-import { detalharContrato, enviarContratoAssinado, removerContratoAssinado } from "@/api/contratos";
+import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack, Pencil } from "lucide-react";
+import {
+  detalharContrato,
+  enviarContratoAssinado,
+  removerContratoAssinado,
+  atualizarValoresContrato,
+  type AtualizarValoresContratoInput,
+} from "@/api/contratos";
 import { listarParcelasCaucao, pagarParcelaCaucao, type PagarParcelaCaucaoInput } from "@/api/caucao";
 import { listarAditivos, criarAditivo, excluirAditivo, baixarAditivo } from "@/api/aditivos";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,10 +38,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// Sempre retorna um inteiro entre 1 e 31 - evita NaN (campo vazio), valores
+// fora do intervalo e outros estados intermediarios invalidos enquanto o
+// usuario digita.
+function parseDiaVencimento(valor: string): number {
+  const numero = Math.trunc(Number(valor));
+  if (!Number.isFinite(numero)) return 1;
+  return Math.min(31, Math.max(1, numero));
+}
+
 export function ContratoDetalhePage() {
   const { id } = useParams<{ id: string }>();
   const { usuario } = useAuth();
   const podeEditar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeEditarContratos;
+  const ehProprietario = usuario?.role === "proprietario";
   const queryClient = useQueryClient();
   const inputContratoRef = useRef<HTMLInputElement>(null);
 
@@ -45,6 +62,14 @@ export function ContratoDetalhePage() {
   });
   const [erro, setErro] = useState<string | null>(null);
   const [removendoContrato, setRemovendoContrato] = useState(false);
+
+  const [editandoValores, setEditandoValores] = useState(false);
+  const [formValores, setFormValores] = useState<AtualizarValoresContratoInput>({
+    valorAluguel: 0,
+    diaVencimento: 5,
+    atualizarPagamentosFuturos: false,
+  });
+  const [erroValores, setErroValores] = useState<string | null>(null);
 
   const inputAditivoRef = useRef<HTMLInputElement>(null);
   const [aditivoDialogAberto, setAditivoDialogAberto] = useState(false);
@@ -107,6 +132,27 @@ export function ContratoDetalhePage() {
       setRemovendoContrato(false);
     },
   });
+
+  const mutAtualizarValores = useMutation({
+    mutationFn: (input: AtualizarValoresContratoInput) => atualizarValoresContrato(id!, input),
+    onSuccess: async () => {
+      toast.success("Valores atualizados com sucesso");
+      await queryClient.invalidateQueries({ queryKey: ["contratos", id] });
+      setEditandoValores(false);
+    },
+    onError: (err) => setErroValores(mensagemErro(err)),
+  });
+
+  function abrirEditarValores() {
+    if (!contrato) return;
+    setFormValores({
+      valorAluguel: contrato.valorAluguel,
+      diaVencimento: contrato.diaVencimento,
+      atualizarPagamentosFuturos: false,
+    });
+    setErroValores(null);
+    setEditandoValores(true);
+  }
 
   const { data: aditivos } = useQuery({
     queryKey: ["contratos", id, "aditivos"],
@@ -194,6 +240,15 @@ export function ContratoDetalhePage() {
         </TabsList>
 
         <TabsContent value="detalhes" className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">Valores do Contrato</h3>
+        {ehProprietario && contrato.status === "ativo" && (
+          <Button variant="outline" size="sm" onClick={abrirEditarValores}>
+            <Pencil className="h-4 w-4" />
+            Editar Valores
+          </Button>
+        )}
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
@@ -520,6 +575,69 @@ export function ContratoDetalhePage() {
               disabled={mutPagar.isPending}
             >
               {mutPagar.isPending ? "Salvando..." : "Confirmar pagamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar valores do contrato */}
+      <Dialog open={editandoValores} onOpenChange={setEditandoValores}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Valores do Contrato</DialogTitle>
+            <DialogDescription>Apenas o Proprietário pode alterar o valor do aluguel e o dia de vencimento.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="valorAluguelEdit">Valor do aluguel</Label>
+              <CurrencyInput
+                id="valorAluguelEdit"
+                value={formValores.valorAluguel}
+                onValueChange={(v) => setFormValores({ ...formValores, valorAluguel: v ?? 0 })}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="diaVencimentoEdit">Dia de vencimento</Label>
+              <Input
+                id="diaVencimentoEdit"
+                type="number"
+                min={1}
+                max={31}
+                value={formValores.diaVencimento}
+                onChange={(e) => setFormValores({ ...formValores, diaVencimento: parseDiaVencimento(e.target.value) })}
+              />
+            </div>
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox
+                checked={formValores.atualizarPagamentosFuturos}
+                onCheckedChange={(v) =>
+                  setFormValores({ ...formValores, atualizarPagamentosFuturos: v === true })
+                }
+              />
+              <span>
+                Aplicar o novo valor do aluguel aos pagamentos futuros já gerados (pendentes, a partir de hoje). Pagamentos
+                já pagos, atrasados ou cancelados não são alterados.
+              </span>
+            </label>
+            {erroValores && <p className="text-sm text-destructive">{erroValores}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditandoValores(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setErroValores(null);
+                mutAtualizarValores.mutate(formValores);
+              }}
+              disabled={
+                mutAtualizarValores.isPending ||
+                !formValores.valorAluguel ||
+                formValores.valorAluguel <= 0 ||
+                !formValores.diaVencimento
+              }
+            >
+              {mutAtualizarValores.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>

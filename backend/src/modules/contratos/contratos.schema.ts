@@ -30,6 +30,23 @@ export const renovarContratoSchema = z
     path: ["dataFim"],
   });
 
+export const atualizarValoresContratoSchema = z
+  .object({
+    valorAluguel: z.number().positive().optional(),
+    diaVencimento: z.number().int().min(1).max(31).optional(),
+    // So tem efeito quando valorAluguel e informado - controla se o novo
+    // valor tambem e aplicado aos Pagamentos tipo=aluguel ja pre-gerados
+    // que ainda estao pendentes e vencem dai pra frente.
+    atualizarPagamentosFuturos: z.boolean().optional().default(false),
+  })
+  .refine((d) => d.valorAluguel !== undefined || d.diaVencimento !== undefined, {
+    message: "Informe ao menos um campo para atualizar (valorAluguel ou diaVencimento)",
+  });
+
+export const atualizarPagamentosLoteSchema = z.object({
+  mesInicio: z.string().regex(/^\d{4}-\d{2}$/, "mesInicio deve estar no formato YYYY-MM"),
+});
+
 export const rejeitarContratoSchema = z.object({
   motivoRejeicao: z.string().min(3, "Informe o motivo da rejeição"),
 });

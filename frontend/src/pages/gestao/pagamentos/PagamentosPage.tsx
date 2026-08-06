@@ -32,7 +32,7 @@ import { listarContratos } from "@/api/contratos";
 import { listarImoveis } from "@/api/imoveis";
 import { useAuth } from "@/contexts/AuthContext";
 import { FORMA_PAGAMENTO, TIPO_PAGAMENTO, type Pagamento } from "@/types/domain";
-import { formatarCompetencia, formatarData, formatarMoeda } from "@/lib/format";
+import { formatarCompetencia, formatarData, formatarMoeda, hojeInputData, paraInputData } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -111,6 +111,7 @@ export function PagamentosPage() {
   const [pagando, setPagando] = useState<Pagamento | null>(null);
   const [formPagar, setFormPagar] = useState<MarcarPagoInput>({
     valorPago: 0,
+    dataPagamento: hojeInputData(),
     formaPagamento: "pix",
     observacoes: "",
   });
@@ -246,7 +247,12 @@ export function PagamentosPage() {
 
   function abrirPagar(pagamento: Pagamento) {
     setPagando(pagamento);
-    setFormPagar({ valorPago: pagamento.valorPrevisto, formaPagamento: "pix", observacoes: "" });
+    setFormPagar({
+      valorPago: pagamento.valorPrevisto,
+      dataPagamento: hojeInputData(),
+      formaPagamento: "pix",
+      observacoes: "",
+    });
     setErro(null);
     setAnexarComprovante(false);
     setArquivoComprovante(null);
@@ -448,6 +454,7 @@ export function PagamentosPage() {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Competência</TableHead>
                   <TableHead>Vencimento</TableHead>
+                  <TableHead>Pagamento</TableHead>
                   <TableHead>Valor</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -465,6 +472,18 @@ export function PagamentosPage() {
                     <TableCell className="capitalize">{pagamento.tipo}</TableCell>
                     <TableCell>{formatarCompetencia(pagamento.competencia)}</TableCell>
                     <TableCell>{formatarData(pagamento.dataVencimento)}</TableCell>
+                    <TableCell>
+                      {pagamento.status === "pago" ? (
+                        <div>
+                          <p>{formatarData(pagamento.dataPagamento)}</p>
+                          {pagamento.dataPagamento && pagamento.dataPagamento < pagamento.dataVencimento && (
+                            <p className="text-xs text-muted-foreground">Antecipado</p>
+                          )}
+                        </div>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell>{formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}</TableCell>
                     <TableCell>
                       <StatusBadge status={pagamento.status} />
@@ -528,6 +547,16 @@ export function PagamentosPage() {
                 <MobileRowField label="Tipo" value={<span className="capitalize">{pagamento.tipo}</span>} />
                 <MobileRowField label="Competência" value={formatarCompetencia(pagamento.competencia)} />
                 <MobileRowField label="Vencimento" value={formatarData(pagamento.dataVencimento)} />
+                {pagamento.status === "pago" && (
+                  <MobileRowField
+                    label="Pagamento"
+                    value={
+                      pagamento.dataPagamento && pagamento.dataPagamento < pagamento.dataVencimento
+                        ? `${formatarData(pagamento.dataPagamento)} (antecipado)`
+                        : formatarData(pagamento.dataPagamento)
+                    }
+                  />
+                )}
                 <MobileRowField
                   label="Valor"
                   value={formatarMoeda(pagamento.valorPago ?? pagamento.valorPrevisto)}
@@ -695,6 +724,21 @@ export function PagamentosPage() {
               />
             </div>
             <div className="flex flex-col gap-2">
+              <Label htmlFor="dataPagamento">Data do pagamento</Label>
+              <Input
+                id="dataPagamento"
+                type="date"
+                max={hojeInputData()}
+                value={formPagar.dataPagamento ?? hojeInputData()}
+                onChange={(e) => setFormPagar({ ...formPagar, dataPagamento: e.target.value })}
+              />
+              {pagando && formPagar.dataPagamento && formPagar.dataPagamento < paraInputData(pagando.dataVencimento) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Pagamento antecipado: a data informada é anterior ao vencimento ({formatarData(pagando.dataVencimento)}).
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
               <Label>Forma de pagamento</Label>
               <Select
                 value={formPagar.formaPagamento}
@@ -801,7 +845,12 @@ export function PagamentosPage() {
                 setErro(null);
                 if (pagando) mutPagar.mutate({ id: pagando.id, input: formPagar });
               }}
-              disabled={mutPagar.isPending || formPagar.valorPago <= 0}
+              disabled={
+                mutPagar.isPending ||
+                formPagar.valorPago <= 0 ||
+                !formPagar.dataPagamento ||
+                formPagar.dataPagamento > hojeInputData()
+              }
             >
               {mutPagar.isPending ? "Salvando..." : "Confirmar pagamento"}
             </Button>

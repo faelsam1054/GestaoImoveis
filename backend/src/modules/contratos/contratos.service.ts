@@ -5,7 +5,12 @@ import { gerarContratoPdf } from "../../services/pdf/contrato.pdf";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import { enviarEmail } from "../email/email.service";
 import { criarNotificacao } from "../notificacoes/notificacoes.service";
-import type { criarContratoSchema, renovarContratoSchema } from "./contratos.schema";
+import type {
+  criarContratoSchema,
+  renovarContratoSchema,
+  atualizarValoresContratoSchema,
+  atualizarPagamentosLoteSchema,
+} from "./contratos.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import type { Role } from "../../types/rbac";
@@ -464,6 +469,68 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
 
   await gerarEAnexarContratoPdf(novoContratoCriado.id);
   return prisma.contrato.findUniqueOrThrow({ where: { id: novoContratoCriado.id }, include: includePadrao });
+}
+
+// Edicao pontual de valor do aluguel/dia de vencimento num contrato ja
+// ativo (fora do fluxo de renovacao). Diferente de renovar(), nao cria um
+// novo contrato nem mexe em pagamentos ja pagos/cancelados - so
+// opcionalmente reajusta os Pagamentos tipo=aluguel que ainda estao
+// pendentes e vencem dai pra frente (os ja vencidos/atrasados sao deixados
+// como estavam, pois representam competencias que ja deveriam ter sido cobradas).
+export async function atualizarValores(id: string, data: z.infer<typeof atualizarValoresContratoSchema>) {
+  const contrato = await buscarPorIdOuFalhar(id);
+  if (contrato.status !== "ativo") {
+    throw new AppError("Somente contratos ativos podem ter os valores editados", 409);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const atualizado = await tx.contrato.update({
+      where: { id },
+      data: {
+        ...(data.valorAluguel !== undefined ? { valorAluguel: data.valorAluguel } : {}),
+        ...(data.diaVencimento !== undefined ? { diaVencimento: data.diaVencimento } : {}),
+      },
+      include: includePadrao,
+    });
+
+    if (data.valorAluguel !== undefined && data.atualizarPagamentosFuturos) {
+      await tx.pagamento.updateMany({
+        where: {
+          contratoId: id,
+          tipo: "aluguel",
+          status: "pendente",
+          dataVencimento: { gte: new Date() },
+        },
+        data: { valorPrevisto: data.valorAluguel },
+      });
+    }
+
+    return atualizado;
+  });
+}
+
+// Aplica o valor ATUAL do contrato (Contrato.valorAluguel) aos Pagamentos
+// tipo=aluguel a partir da competencia informada, cobrindo tambem os ja
+// "atrasado" (diferente de atualizarValores/atualizarPagamentosFuturos, que
+// so pega "pendente" - aqui o proprietario esta corrigindo retroativamente
+// um lote que ficou com o valor errado).
+export async function atualizarPagamentosEmLote(id: string, data: z.infer<typeof atualizarPagamentosLoteSchema>) {
+  const contrato = await buscarPorIdOuFalhar(id);
+  if (contrato.status !== "ativo") {
+    throw new AppError("Somente contratos ativos podem ter pagamentos atualizados em lote", 409);
+  }
+
+  const { count } = await prisma.pagamento.updateMany({
+    where: {
+      contratoId: id,
+      tipo: "aluguel",
+      status: { in: ["pendente", "atrasado"] },
+      competencia: { gte: data.mesInicio },
+    },
+    data: { valorPrevisto: contrato.valorAluguel },
+  });
+
+  return { pagamentosAtualizados: count, valorAplicado: contrato.valorAluguel };
 }
 
 export async function anexarContratoAssinado(id: string, url: string) {
