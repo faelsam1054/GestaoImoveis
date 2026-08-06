@@ -68,6 +68,7 @@ export function ContratoDetalhePage() {
     valorAluguel: 0,
     diaVencimento: 5,
     atualizarPagamentosFuturos: false,
+    atualizarDataVencimentoPendentes: true,
   });
   const [erroValores, setErroValores] = useState<string | null>(null);
 
@@ -135,8 +136,12 @@ export function ContratoDetalhePage() {
 
   const mutAtualizarValores = useMutation({
     mutationFn: (input: AtualizarValoresContratoInput) => atualizarValoresContrato(id!, input),
-    onSuccess: async () => {
-      toast.success("Valores atualizados com sucesso");
+    onSuccess: async (resultado) => {
+      toast.success(
+        resultado.pagamentosAtualizados > 0
+          ? `Valores atualizados. ${resultado.pagamentosAtualizados} pagamento(s) foram atualizados.`
+          : "Valores atualizados com sucesso.",
+      );
       await queryClient.invalidateQueries({ queryKey: ["contratos", id] });
       setEditandoValores(false);
     },
@@ -149,6 +154,7 @@ export function ContratoDetalhePage() {
       valorAluguel: contrato.valorAluguel,
       diaVencimento: contrato.diaVencimento,
       atualizarPagamentosFuturos: false,
+      atualizarDataVencimentoPendentes: true,
     });
     setErroValores(null);
     setEditandoValores(true);
@@ -607,6 +613,23 @@ export function ContratoDetalhePage() {
                 onChange={(e) => setFormValores({ ...formValores, diaVencimento: parseDiaVencimento(e.target.value) })}
               />
             </div>
+            {formValores.diaVencimento !== undefined && formValores.diaVencimento !== contrato.diaVencimento && (
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p>
+                  Esta alteração atualizará a data de vencimento de todos os pagamentos pendentes (incluindo o mês
+                  atual). Pagamentos já pagos não serão alterados.
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={formValores.atualizarDataVencimentoPendentes}
+                    onCheckedChange={(v) =>
+                      setFormValores({ ...formValores, atualizarDataVencimentoPendentes: v === true })
+                    }
+                  />
+                  <span>Atualizar pagamentos pendentes</span>
+                </label>
+              </div>
+            )}
             <label className="flex items-start gap-2 text-sm">
               <Checkbox
                 checked={formValores.atualizarPagamentosFuturos}

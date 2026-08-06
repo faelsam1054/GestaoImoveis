@@ -18,6 +18,7 @@ export interface AtualizarValoresContratoInput {
   valorAluguel?: number;
   diaVencimento?: number;
   atualizarPagamentosFuturos?: boolean;
+  atualizarDataVencimentoPendentes?: boolean;
 }
 
 export interface FiltrosContrato {
@@ -59,7 +60,10 @@ export async function renovarContrato(id: string, input: RenovarContratoInput): 
   return data;
 }
 
-export async function atualizarValoresContrato(id: string, input: AtualizarValoresContratoInput): Promise<Contrato> {
+export async function atualizarValoresContrato(
+  id: string,
+  input: AtualizarValoresContratoInput,
+): Promise<Contrato & { pagamentosAtualizados: number }> {
   const { data } = await api.patch(`/contratos/${id}/valores`, input);
   return data;
 }

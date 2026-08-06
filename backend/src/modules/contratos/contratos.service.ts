@@ -5,6 +5,7 @@ import { gerarContratoPdf } from "../../services/pdf/contrato.pdf";
 import { combinarFiltroImovel } from "../administradores/acesso-imovel.service";
 import { enviarEmail } from "../email/email.service";
 import { criarNotificacao } from "../notificacoes/notificacoes.service";
+import { atualizarAtrasados } from "../pagamentos/pagamentos.service";
 import type {
   criarContratoSchema,
   renovarContratoSchema,
@@ -48,8 +49,24 @@ function gerarCompetencias(dataInicio: Date, dataFim: Date, diaVencimento: numbe
     });
     cursor = new Date(ano, mes + 1, 1);
   }
-
   return competencias;
+}
+
+function competenciaAtual(): string {
+  const hoje = new Date();
+  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Mesmo clamping de dia usado em gerarCompetencias (ex: dia 31 em fevereiro
+// cai no dia 28/29), mas a partir de uma competencia "YYYY-MM" ja existente
+// em vez de varrer um intervalo - usado para corrigir a data de um Pagamento
+// ja gerado quando o dia de vencimento do contrato muda.
+function dataComNovoDia(competencia: string, dia: number): Date {
+  const [anoStr, mesStr] = competencia.split("-");
+  const ano = Number(anoStr);
+  const mes = Number(mesStr) - 1;
+  const ultimoDiaDoMes = new Date(ano, mes + 1, 0).getDate();
+  return new Date(ano, mes, Math.min(dia, ultimoDiaDoMes));
 }
 
 async function gerarPagamentosDoContrato(
@@ -475,15 +492,19 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
 // ativo (fora do fluxo de renovacao). Diferente de renovar(), nao cria um
 // novo contrato nem mexe em pagamentos ja pagos/cancelados - so
 // opcionalmente reajusta os Pagamentos tipo=aluguel que ainda estao
-// pendentes e vencem dai pra frente (os ja vencidos/atrasados sao deixados
-// como estavam, pois representam competencias que ja deveriam ter sido cobradas).
+// pendentes/atrasados a partir da competencia atual (os de competencias
+// passadas sao deixados como estavam - representam inadimplencia historica,
+// nao um erro de cadastro a corrigir).
 export async function atualizarValores(id: string, data: z.infer<typeof atualizarValoresContratoSchema>) {
   const contrato = await buscarPorIdOuFalhar(id);
   if (contrato.status !== "ativo") {
     throw new AppError("Somente contratos ativos podem ter os valores editados", 409);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const diaVencimentoMudou = data.diaVencimento !== undefined && data.diaVencimento !== contrato.diaVencimento;
+  let pagamentosAtualizados = 0;
+
+  const atualizado = await prisma.$transaction(async (tx) => {
     const atualizado = await tx.contrato.update({
       where: { id },
       data: {
@@ -505,8 +526,49 @@ export async function atualizarValores(id: string, data: z.infer<typeof atualiza
       });
     }
 
+    // Propaga o novo dia de vencimento para os Pagamentos ja gerados (mes
+    // atual em diante) - sem isso, o dia fica desatualizado no pagamento
+    // para sempre (era exatamente esse o bug relatado). Agrupa por
+    // competencia porque cada mes precisa de um Date diferente (mesmo
+    // ano/mes, dia clampado ao ultimo dia do mes quando necessario).
+    if (diaVencimentoMudou && data.diaVencimento !== undefined && data.atualizarDataVencimentoPendentes) {
+      const afetados = await tx.pagamento.findMany({
+        where: {
+          contratoId: id,
+          tipo: "aluguel",
+          status: { in: ["pendente", "atrasado"] },
+          competencia: { gte: competenciaAtual() },
+        },
+        select: { competencia: true },
+        distinct: ["competencia"],
+      });
+
+      for (const { competencia } of afetados) {
+        const { count } = await tx.pagamento.updateMany({
+          where: {
+            contratoId: id,
+            tipo: "aluguel",
+            status: { in: ["pendente", "atrasado"] },
+            competencia,
+          },
+          data: { dataVencimento: dataComNovoDia(competencia, data.diaVencimento) },
+        });
+        pagamentosAtualizados += count;
+      }
+    }
+
     return atualizado;
   });
+
+  // Fora da transacao, best-effort (mesmo padrao ja usado em toda leitura de
+  // pagamentos): reclassifica pendente/atrasado apos a mudanca de data - ex.
+  // um pagamento atrasado cujo vencimento acabou de ser prorrogado pra
+  // frente volta a ser "pendente".
+  if (diaVencimentoMudou) {
+    await atualizarAtrasados();
+  }
+
+  return { ...atualizado, pagamentosAtualizados };
 }
 
 // Aplica o valor ATUAL do contrato (Contrato.valorAluguel) aos Pagamentos

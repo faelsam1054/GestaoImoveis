@@ -37,12 +37,23 @@ const includePadrao = {
 } satisfies Prisma.PagamentoInclude;
 
 // Atualizacao "preguicosa": nao ha job/cron agendado, entao qualquer leitura
-// de pagamentos primeiro promove pendentes vencidos para "atrasado".
+// de pagamentos primeiro reclassifica pendente/atrasado com base na data
+// atual. Bidirecional: promove pendente vencido para atrasado, mas tambem
+// reverte atrasado cujo vencimento foi prorrogado para o futuro de volta
+// para pendente (ex: proprietario mudou o dia de vencimento do contrato -
+// ver atualizarValores em contratos.service.ts). Pago/cancelado nunca mudam.
 export async function atualizarAtrasados() {
-  await prisma.pagamento.updateMany({
-    where: { status: "pendente", dataVencimento: { lt: new Date() } },
-    data: { status: "atrasado" },
-  });
+  const [paraAtrasado, paraPendente] = await Promise.all([
+    prisma.pagamento.updateMany({
+      where: { status: "pendente", dataVencimento: { lt: new Date() } },
+      data: { status: "atrasado" },
+    }),
+    prisma.pagamento.updateMany({
+      where: { status: "atrasado", dataVencimento: { gte: new Date() } },
+      data: { status: "pendente" },
+    }),
+  ]);
+  return paraAtrasado.count + paraPendente.count;
 }
 
 export async function listar(filtros: FiltrosPagamento) {

@@ -38,6 +38,13 @@ export const atualizarValoresContratoSchema = z
     // valor tambem e aplicado aos Pagamentos tipo=aluguel ja pre-gerados
     // que ainda estao pendentes e vencem dai pra frente.
     atualizarPagamentosFuturos: z.boolean().optional().default(false),
+    // So tem efeito quando diaVencimento e informado e realmente muda -
+    // controla se a NOVA data (dia) tambem e aplicada aos Pagamentos
+    // pendente/atrasado do mes atual em diante. Default true (diferente de
+    // atualizarPagamentosFuturos): uma data de vencimento desatualizada nos
+    // pagamentos ja gerados e sempre um dado errado, nao uma decisao de
+    // negocio opcional.
+    atualizarDataVencimentoPendentes: z.boolean().optional().default(true),
   })
   .refine((d) => d.valorAluguel !== undefined || d.diaVencimento !== undefined, {
     message: "Informe ao menos um campo para atualizar (valorAluguel ou diaVencimento)",

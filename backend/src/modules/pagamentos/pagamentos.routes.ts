@@ -1,7 +1,7 @@
 import { Router } from "express";
 import * as controller from "./pagamentos.controller";
 import { authenticate } from "../../middlewares/auth.middleware";
-import { authorizePermissao } from "../../middlewares/rbac.middleware";
+import { authorizePermissao, requireRole } from "../../middlewares/rbac.middleware";
 import { criarUploadMiddleware } from "../../middlewares/upload.middleware";
 
 // PDF ou imagem (jpg/png), 10MB - comprovantes de pagamento costumam ser
@@ -15,6 +15,7 @@ const router = Router();
 
 router.use(authenticate);
 
+router.post("/recalcular-status", requireRole("proprietario"), controller.recalcularStatus);
 router.get("/", authorizePermissao("podeVerPagamentos"), controller.listar);
 router.get("/:id", authorizePermissao("podeVerPagamentos"), controller.detalhar);
 router.post("/", authorizePermissao("podeRegistrarPagamentos"), controller.criarAvulso);

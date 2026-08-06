@@ -156,6 +156,8 @@ export const atualizarValores = asyncHandler(async (req, res) => {
       valorAluguel: contrato.valorAluguel,
       diaVencimento: contrato.diaVencimento,
       atualizarPagamentosFuturos: data.atualizarPagamentosFuturos,
+      atualizarDataVencimentoPendentes: data.atualizarDataVencimentoPendentes,
+      pagamentosAtualizados: contrato.pagamentosAtualizados,
     },
     ip: getClientIp(req),
   });

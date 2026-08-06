@@ -317,6 +317,36 @@ própria com:
   pagamentos já `atrasado` — pensado para corrigir lotes que ficaram com o
   valor errado, sem UI dedicada ainda.
 
+**Atualização de vencimento**: quando `diaVencimento` muda de valor em
+`PATCH /contratos/:id/valores`, o novo dia é propagado para a
+`Pagamento.dataVencimento` (mantendo mês/ano) de todos os `Pagamento`
+`tipo="aluguel"` com `status IN ('pendente','atrasado')` a partir da
+competência atual (inclusive) — competências passadas não são tocadas
+(inadimplência histórica, não um erro de cadastro). Dia maior que o mês
+permite (ex: 31) é ajustado para o último dia do mês (28/29 em fevereiro,
+conforme ano bissexto). Controlado pelo campo `atualizarDataVencimentoPendentes`
+(default `true`, diferente de `atualizarPagamentosFuturos` que é sobre valor
+e default `false`). **Não afeta `CaucaoParcela`** — o vencimento da caução é
+calculado a partir de `dataInicio` (30/60/90 dias), sem relação com o dia de
+vencimento do aluguel; parcelas de caução têm sua própria tela de edição
+(`PUT /contratos/:id/caucao`).
+
+Como esse endpoint só propaga quando `diaVencimento` de fato muda de valor,
+uma divergência que já existia antes desta correção **não é corrigida
+retroativamente sozinha** — é necessário reabrir "Editar Valores" e mudar
+(ou definir de novo) o dia de vencimento para dispará-la.
+
+O status `atrasado`/`pendente` dos pagamentos é recalculado de forma lazy
+(`atualizarAtrasados()` em `pagamentos.service.ts`, chamado a cada
+listagem/detalhe/dashboard) — bidirecional: promove `pendente` vencido para
+`atrasado` e também reverte `atrasado` para `pendente` quando o vencimento é
+adiado para o futuro. `POST /pagamentos/recalcular-status` (Proprietário)
+expõe isso manualmente (botão "Recalcular Status" no menu Pagamentos). Não há
+cron job: a app roda em funções serverless (Vercel), onde um agendador
+`node-cron` em processo não persiste entre invocações; o recálculo lazy já
+cobre o caso de uso a cada carregamento de tela. O mesmo recálculo
+bidirecional foi aplicado a `CaucaoParcela` em `caucao.service.ts`.
+
 ### Manutenção
 
 - **Editar e excluir** qualquer gasto já cadastrado (não só avançar o status):

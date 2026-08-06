@@ -30,6 +30,11 @@ export interface FiltrosPagamento {
   pageSize?: number;
 }
 
+export async function recalcularStatusPagamentos(): Promise<{ pagamentosAtualizados: number }> {
+  const { data } = await api.post("/pagamentos/recalcular-status");
+  return data;
+}
+
 export async function listarPagamentos(filtros: FiltrosPagamento = {}): Promise<Paginado<Pagamento>> {
   const { data } = await api.get("/pagamentos", { params: { pageSize: 100, ...filtros } });
   return data;

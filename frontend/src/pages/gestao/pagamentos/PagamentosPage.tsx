@@ -15,6 +15,7 @@ import {
   Paperclip,
   ImageIcon,
   FileText,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -24,6 +25,7 @@ import {
   desfazerPagamento,
   anexarComprovantePagamento,
   baixarComprovantePagamento,
+  recalcularStatusPagamentos,
   type FiltrosPagamento,
   type PagamentoAvulsoInput,
   type MarcarPagoInput,
@@ -98,6 +100,7 @@ function carregarOrdenacaoSalva(): Ordenacao {
 export function PagamentosPage() {
   const { usuario } = useAuth();
   const podeRegistrar = usuario?.role === "proprietario" || usuario?.permissaoAdministrador?.podeRegistrarPagamentos;
+  const ehProprietario = usuario?.role === "proprietario";
   const queryClient = useQueryClient();
 
   const [aba, setAba] = useState<AbaPagamento>("todos");
@@ -196,6 +199,19 @@ export function PagamentosPage() {
   function invalidar() {
     return queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
   }
+
+  const mutRecalcularStatus = useMutation({
+    mutationFn: () => recalcularStatusPagamentos(),
+    onSuccess: async ({ pagamentosAtualizados }) => {
+      toast.success(
+        pagamentosAtualizados > 0
+          ? `Status recalculado. ${pagamentosAtualizados} pagamento(s) atualizados.`
+          : "Status recalculado. Nenhum pagamento precisou de ajuste.",
+      );
+      await invalidar();
+    },
+    onError: (err) => toast.error(mensagemErro(err)),
+  });
 
   const mutCriarAvulso = useMutation({
     mutationFn: (input: PagamentoAvulsoInput) => criarPagamentoAvulso(input),
@@ -309,11 +325,25 @@ export function PagamentosPage() {
         titulo="Pagamentos"
         descricao="Aluguéis, cauções e multas vinculados aos contratos."
         acoes={
-          podeRegistrar ? (
-            <Button onClick={abrirNovoAvulso}>
-              <Plus className="h-4 w-4" />
-              Lançamento Avulso
-            </Button>
+          ehProprietario || podeRegistrar ? (
+            <div className="flex gap-2">
+              {ehProprietario && (
+                <Button
+                  variant="outline"
+                  onClick={() => mutRecalcularStatus.mutate()}
+                  disabled={mutRecalcularStatus.isPending}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  {mutRecalcularStatus.isPending ? "Recalculando..." : "Recalcular Status"}
+                </Button>
+              )}
+              {podeRegistrar && (
+                <Button onClick={abrirNovoAvulso}>
+                  <Plus className="h-4 w-4" />
+                  Lançamento Avulso
+                </Button>
+              )}
+            </div>
           ) : undefined
         }
       />

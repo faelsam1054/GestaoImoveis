@@ -48,6 +48,19 @@ async function garantirAcessoComprovante(
   throw new AppError("Voce nao tem acesso a este comprovante", 403);
 }
 
+export const recalcularStatus = asyncHandler(async (req, res) => {
+  const pagamentosAtualizados = await service.atualizarAtrasados();
+  await registrarAuditoria({
+    usuarioId: req.user!.id,
+    acao: "RECALCULAR_STATUS_PAGAMENTOS",
+    entidade: "Pagamento",
+    entidadeId: null,
+    dadosDepois: { pagamentosAtualizados },
+    ip: getClientIp(req),
+  });
+  res.json({ pagamentosAtualizados });
+});
+
 export const listar = asyncHandler(async (req, res) => {
   const filtros = listarPagamentosQuerySchema.parse(req.query);
   const imovelIdsPermitidos = await obterImovelIdsPermitidos(req.user!.id, req.user!.role);
