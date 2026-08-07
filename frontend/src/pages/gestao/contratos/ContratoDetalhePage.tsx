@@ -2,8 +2,14 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack } from "lucide-react";
-import { detalharContrato, enviarContratoAssinado, removerContratoAssinado } from "@/api/contratos";
+import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack, Pencil } from "lucide-react";
+import {
+  detalharContrato,
+  enviarContratoAssinado,
+  removerContratoAssinado,
+  atualizarValoresContrato,
+  type AtualizarValoresContratoInput,
+} from "@/api/contratos";
 import { listarParcelasCaucao, pagarParcelaCaucao, type PagarParcelaCaucaoInput } from "@/api/caucao";
 import { listarAditivos, criarAditivo, excluirAditivo, baixarAditivo, type AditivoInput } from "@/api/aditivos";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,6 +41,8 @@ import {
 // Estado local do campo permite "" (vazio) enquanto o usuario digita - ver
 // mesma explicacao em ContratosPage.tsx: clampar a cada tecla impede digitar
 // qualquer numero de 2 digitos. Validacao de intervalo so no submit.
+type FormValoresContrato = Omit<AtualizarValoresContratoInput, "diaVencimento"> & { diaVencimento: number | "" };
+
 interface FormAditivo {
   descricaoAlteracoes: string;
   dataAditivo: string;
@@ -64,6 +72,15 @@ export function ContratoDetalhePage() {
   });
   const [erro, setErro] = useState<string | null>(null);
   const [removendoContrato, setRemovendoContrato] = useState(false);
+
+  const [editandoValores, setEditandoValores] = useState(false);
+  const [formValores, setFormValores] = useState<FormValoresContrato>({
+    valorAluguel: 0,
+    diaVencimento: 5,
+    atualizarPagamentosFuturos: false,
+    atualizarDataVencimentoPendentes: true,
+  });
+  const [erroValores, setErroValores] = useState<string | null>(null);
 
   const inputAditivoRef = useRef<HTMLInputElement>(null);
   const [aditivoDialogAberto, setAditivoDialogAberto] = useState(false);
@@ -130,6 +147,32 @@ export function ContratoDetalhePage() {
       setRemovendoContrato(false);
     },
   });
+
+  const mutAtualizarValores = useMutation({
+    mutationFn: (input: AtualizarValoresContratoInput) => atualizarValoresContrato(id!, input),
+    onSuccess: async (resultado) => {
+      toast.success(
+        resultado.pagamentosAtualizados > 0
+          ? `Valores atualizados. ${resultado.pagamentosAtualizados} pagamento(s) foram atualizados.`
+          : "Valores atualizados com sucesso.",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["contratos", id] });
+      setEditandoValores(false);
+    },
+    onError: (err) => setErroValores(mensagemErro(err)),
+  });
+
+  function abrirEditarValores() {
+    if (!contrato) return;
+    setFormValores({
+      valorAluguel: contrato.valorAluguel,
+      diaVencimento: contrato.diaVencimento,
+      atualizarPagamentosFuturos: false,
+      atualizarDataVencimentoPendentes: true,
+    });
+    setErroValores(null);
+    setEditandoValores(true);
+  }
 
   const { data: aditivos } = useQuery({
     queryKey: ["contratos", id, "aditivos"],
@@ -241,10 +284,11 @@ export function ContratoDetalhePage() {
         <TabsContent value="detalhes" className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-muted-foreground">Valores do Contrato</h3>
-        {ehProprietario && (
-          <p className="text-xs text-muted-foreground">
-            Para alterar valor, dia de vencimento ou data fim, use "Adicionar Aditivo" na aba Aditivos.
-          </p>
+        {ehProprietario && (contrato.status === "ativo" || contrato.status === "encerrado") && (
+          <Button variant="outline" size="sm" onClick={abrirEditarValores}>
+            <Pencil className="h-4 w-4" />
+            Editar Valores
+          </Button>
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -587,6 +631,104 @@ export function ContratoDetalhePage() {
               disabled={mutPagar.isPending}
             >
               {mutPagar.isPending ? "Salvando..." : "Confirmar pagamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar valores do contrato */}
+      <Dialog open={editandoValores} onOpenChange={setEditandoValores}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Valores do Contrato</DialogTitle>
+            <DialogDescription>Apenas o Proprietário pode alterar o valor do aluguel e o dia de vencimento.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="valorAluguelEdit">Valor do aluguel</Label>
+              <CurrencyInput
+                id="valorAluguelEdit"
+                value={formValores.valorAluguel}
+                onValueChange={(v) => setFormValores({ ...formValores, valorAluguel: v ?? 0 })}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="diaVencimentoEdit">
+                Dia de vencimento <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="diaVencimentoEdit"
+                type="number"
+                min={1}
+                max={31}
+                placeholder="Dia do mês (1-31)"
+                value={formValores.diaVencimento}
+                onChange={(e) =>
+                  setFormValores({ ...formValores, diaVencimento: e.target.value === "" ? "" : Number(e.target.value) })
+                }
+              />
+              {diaVencimentoInvalido(formValores.diaVencimento) && (
+                <p className="text-xs text-destructive">Informe um dia entre 1 e 31.</p>
+              )}
+            </div>
+            {contrato.status === "encerrado" && (
+              <p className="text-xs text-muted-foreground">
+                Este contrato está encerrado - a alteração só corrige o cadastro, não afeta nenhum pagamento (todos os
+                pendentes já foram cancelados ao encerrar).
+              </p>
+            )}
+            {contrato.status === "ativo" &&
+              formValores.diaVencimento !== "" &&
+              formValores.diaVencimento !== contrato.diaVencimento && (
+                <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                  <p>
+                    Esta alteração atualizará a data de vencimento de todos os pagamentos pendentes (incluindo o mês
+                    atual). Pagamentos já pagos não serão alterados.
+                  </p>
+                  <label className="flex items-start gap-2">
+                    <Checkbox
+                      checked={formValores.atualizarDataVencimentoPendentes}
+                      onCheckedChange={(v) =>
+                        setFormValores({ ...formValores, atualizarDataVencimentoPendentes: v === true })
+                      }
+                    />
+                    <span>Atualizar pagamentos pendentes</span>
+                  </label>
+                </div>
+              )}
+            {contrato.status === "ativo" && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={formValores.atualizarPagamentosFuturos}
+                  onCheckedChange={(v) =>
+                    setFormValores({ ...formValores, atualizarPagamentosFuturos: v === true })
+                  }
+                />
+                <span>
+                  Aplicar o novo valor do aluguel aos pagamentos futuros já gerados (pendentes, a partir de hoje).
+                  Pagamentos já pagos, atrasados ou cancelados não são alterados.
+                </span>
+              </label>
+            )}
+            {erroValores && <p className="text-sm text-destructive">{erroValores}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditandoValores(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setErroValores(null);
+                mutAtualizarValores.mutate({ ...formValores, diaVencimento: Number(formValores.diaVencimento) });
+              }}
+              disabled={
+                mutAtualizarValores.isPending ||
+                !formValores.valorAluguel ||
+                formValores.valorAluguel <= 0 ||
+                diaVencimentoInvalido(formValores.diaVencimento)
+              }
+            >
+              {mutAtualizarValores.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>

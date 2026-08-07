@@ -323,12 +323,17 @@ própria com:
 - **Aprovação** (ver seção acima) e **exclusão definitiva**, só permitida sem
   pagamentos/parcelas de caução vinculados — na prática, restrita a contratos
   pendentes ou rejeitados.
-- `PATCH /contratos/:id/valores` (a mesma lógica de valor/dia usada pelos
-  aditivos) e `POST /contratos/:id/atualizar-pagamentos` (reaplica o valor
-  atual do contrato retroativamente a partir de uma competência, cobrindo
-  também `atrasado`) continuam existindo como endpoints, mas sem UI dedicada
-  própria - editar valor/dia/data fim pela interface é sempre via aditivo,
-  para nunca perder o histórico.
+- **Editar Valores** (botão na aba Detalhes, `PATCH /contratos/:id/valores`,
+  Proprietário, contrato `ativo` ou `encerrado`) é um atalho direto pra
+  corrigir valor do aluguel/dia de vencimento **sem** exigir motivo nem gerar
+  um `AditivoContrato` - mesma lógica de propagação/clamp de dia usada pelos
+  aditivos, só que sem registro histórico. Coexiste com "Adicionar Aditivo"
+  (aba Aditivos): use Editar Valores para uma correção rápida de cadastro,
+  use Aditivo quando quiser manter o motivo e o histórico da mudança (ou
+  também mudar a data fim, que Editar Valores não cobre). `POST
+  /contratos/:id/atualizar-pagamentos` (reaplica o valor atual do contrato
+  retroativamente a partir de uma competência, cobrindo também `atrasado`)
+  também continua existindo como endpoint, sem UI dedicada.
 
 **Atualização de vencimento**: quando `diaVencimento` muda de valor em
 `PATCH /contratos/:id/valores`, o novo dia é propagado para a
