@@ -4,10 +4,24 @@ import type { AditivoContrato } from "@/types/domain";
 
 export interface AditivoInput {
   descricaoAlteracoes: string;
-  valorAnterior?: number;
-  valorNovo?: number;
-  contratoAnteriorId?: string;
-  arquivo: File;
+  dataAditivo?: string;
+  valorAluguelNovo?: number;
+  diaVencimentoNovo?: number;
+  dataFimNova?: string;
+  atualizarPagamentosFuturos?: boolean;
+  atualizarDataVencimentoPendentes?: boolean;
+  arquivo?: File;
+}
+
+// Usado so internamente pelo fluxo de renovacao (ContratosPage.tsx): o valor
+// novo ja foi aplicado pelo proprio renovarContrato() no contrato recem-criado,
+// entao aqui e so um registro historico com anterior/novo informados
+// manualmente - nao deve disparar nenhuma escrita adicional no contrato.
+export interface AditivoDocumentacaoInput {
+  descricaoAlteracoes: string;
+  valorAluguelAnterior?: number;
+  valorAluguelNovo?: number;
+  arquivo?: File;
 }
 
 export async function listarAditivos(contratoId: string): Promise<AditivoContrato[]> {
@@ -15,14 +29,30 @@ export async function listarAditivos(contratoId: string): Promise<AditivoContrat
   return data;
 }
 
-export async function criarAditivo(contratoId: string, input: AditivoInput): Promise<AditivoContrato> {
+function montarFormData(input: Record<string, unknown>, arquivo?: File): FormData {
   const form = new FormData();
-  form.append("arquivo", input.arquivo);
-  form.append("descricaoAlteracoes", input.descricaoAlteracoes);
-  if (input.valorAnterior !== undefined) form.append("valorAnterior", String(input.valorAnterior));
-  if (input.valorNovo !== undefined) form.append("valorNovo", String(input.valorNovo));
-  if (input.contratoAnteriorId) form.append("contratoAnteriorId", input.contratoAnteriorId);
+  if (arquivo) form.append("arquivo", arquivo);
+  for (const [chave, valor] of Object.entries(input)) {
+    if (valor !== undefined && valor !== null) form.append(chave, String(valor));
+  }
+  return form;
+}
 
+export async function criarAditivo(contratoId: string, input: AditivoInput): Promise<AditivoContrato> {
+  const { arquivo, ...resto } = input;
+  const form = montarFormData(resto, arquivo);
+  const { data } = await api.post(`/contratos/${contratoId}/aditivo`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function criarAditivoDocumentacao(
+  contratoId: string,
+  input: AditivoDocumentacaoInput,
+): Promise<AditivoContrato> {
+  const { arquivo, ...resto } = input;
+  const form = montarFormData({ ...resto, aplicarNoContrato: false }, arquivo);
   const { data } = await api.post(`/contratos/${contratoId}/aditivo`, form, {
     headers: { "Content-Type": "multipart/form-data" },
   });

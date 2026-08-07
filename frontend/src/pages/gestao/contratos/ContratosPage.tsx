@@ -13,7 +13,7 @@ import {
   type ContratoInput,
   type RenovarContratoInput,
 } from "@/api/contratos";
-import { criarAditivo } from "@/api/aditivos";
+import { criarAditivoDocumentacao } from "@/api/aditivos";
 import { listarImoveis } from "@/api/imoveis";
 import { listarInquilinos } from "@/api/inquilinos";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,16 +45,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// Sempre retorna um inteiro entre 1 e 31 - evita NaN (campo vazio), valores
-// fora do intervalo e outros estados intermediarios invalidos enquanto o
-// usuario digita.
-function parseDiaVencimento(valor: string): number {
-  const numero = Math.trunc(Number(valor));
-  if (!Number.isFinite(numero)) return 1;
-  return Math.min(31, Math.max(1, numero));
+// Estado local do campo permite "" (vazio) enquanto o usuario digita - um
+// numero sempre presente (mesmo que clampado a cada tecla) faz o campo
+// "saltar" de volta pra um valor valido no meio da digitacao, impedindo
+// digitar qualquer numero de 2 digitos (ex: apagar "10" pra digitar "25"
+// passa por um estado vazio intermediario). A validacao de intervalo
+// (1-31) so acontece no submit, nunca a cada tecla.
+type FormNovoContrato = Omit<ContratoInput, "diaVencimento"> & { diaVencimento: number | "" };
+type FormRenovacaoContrato = Omit<RenovarContratoInput, "diaVencimento"> & { diaVencimento: number | "" };
+
+function diaVencimentoInvalido(valor: number | ""): boolean {
+  return valor === "" || valor < 1 || valor > 31;
 }
 
-const FORM_VAZIO: ContratoInput = {
+const FORM_VAZIO: FormNovoContrato = {
   imovelId: "",
   inquilinoId: "",
   dataInicio: "",
@@ -143,7 +147,7 @@ export function ContratosPage() {
   const [aba, setAba] = useState<AbaContrato>("todos");
   const [excluindo, setExcluindo] = useState<Contrato | null>(null);
   const [dialogAberto, setDialogAberto] = useState(false);
-  const [form, setForm] = useState<ContratoInput>(FORM_VAZIO);
+  const [form, setForm] = useState<FormNovoContrato>(FORM_VAZIO);
   const [erro, setErro] = useState<string | null>(null);
   const [arquivoContrato, setArquivoContrato] = useState<File | null>(null);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
@@ -154,7 +158,7 @@ export function ContratosPage() {
   const inputArquivoQuebraRef = useRef<HTMLInputElement>(null);
 
   const [contratoRenovando, setContratoRenovando] = useState<Contrato | null>(null);
-  const [formRenovacao, setFormRenovacao] = useState<RenovarContratoInput>({
+  const [formRenovacao, setFormRenovacao] = useState<FormRenovacaoContrato>({
     dataInicio: "",
     dataFim: "",
     diaVencimento: 5,
@@ -236,15 +240,14 @@ export function ContratosPage() {
 
   const mutRenovar = useMutation({
     mutationFn: ({ id, input }: { id: string; input: RenovarContratoInput }) => renovarContrato(id, input),
-    onSuccess: async (novoContrato, variables) => {
+    onSuccess: async (novoContrato) => {
       toast.success("Contrato renovado.");
       if (possuiAditivo && arquivoAditivoRenovacao) {
         try {
-          await criarAditivo(novoContrato.id, {
+          await criarAditivoDocumentacao(novoContrato.id, {
             descricaoAlteracoes: formAditivoRenovacao.descricaoAlteracoes,
-            valorAnterior: formAditivoRenovacao.valorAnterior,
-            valorNovo: formAditivoRenovacao.valorNovo,
-            contratoAnteriorId: variables.id,
+            valorAluguelAnterior: formAditivoRenovacao.valorAnterior,
+            valorAluguelNovo: formAditivoRenovacao.valorNovo,
             arquivo: arquivoAditivoRenovacao,
           });
           toast.success("Aditivo de renovação anexado.");
@@ -584,15 +587,23 @@ export function ContratosPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="diaVencimento">Dia de vencimento</Label>
+                <Label htmlFor="diaVencimento">
+                  Dia de vencimento <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="diaVencimento"
                   type="number"
                   min={1}
                   max={31}
+                  placeholder="Dia do mês (1-31)"
                   value={form.diaVencimento}
-                  onChange={(e) => setForm({ ...form, diaVencimento: parseDiaVencimento(e.target.value) })}
+                  onChange={(e) =>
+                    setForm({ ...form, diaVencimento: e.target.value === "" ? "" : Number(e.target.value) })
+                  }
                 />
+                {diaVencimentoInvalido(form.diaVencimento) && (
+                  <p className="text-xs text-destructive">Informe um dia entre 1 e 31.</p>
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="valorAluguel">Valor do aluguel</Label>
@@ -683,9 +694,16 @@ export function ContratosPage() {
             <Button
               onClick={() => {
                 setErro(null);
-                mutCriar.mutate(form);
+                mutCriar.mutate({ ...form, diaVencimento: Number(form.diaVencimento) });
               }}
-              disabled={salvando || !form.imovelId || !form.inquilinoId || !form.dataInicio || !form.dataFim}
+              disabled={
+                salvando ||
+                !form.imovelId ||
+                !form.inquilinoId ||
+                !form.dataInicio ||
+                !form.dataFim ||
+                diaVencimentoInvalido(form.diaVencimento)
+              }
             >
               {salvando ? "Criando..." : "Criar contrato"}
             </Button>
@@ -724,14 +742,25 @@ export function ContratosPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label>Dia de vencimento</Label>
+                <Label>
+                  Dia de vencimento <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   type="number"
                   min={1}
                   max={31}
+                  placeholder="Dia do mês (1-31)"
                   value={formRenovacao.diaVencimento}
-                  onChange={(e) => setFormRenovacao({ ...formRenovacao, diaVencimento: parseDiaVencimento(e.target.value) })}
+                  onChange={(e) =>
+                    setFormRenovacao({
+                      ...formRenovacao,
+                      diaVencimento: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
                 />
+                {diaVencimentoInvalido(formRenovacao.diaVencimento) && (
+                  <p className="text-xs text-destructive">Informe um dia entre 1 e 31.</p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <Label>Valor do aluguel</Label>
@@ -836,12 +865,18 @@ export function ContratosPage() {
             <Button
               onClick={() => {
                 setErro(null);
-                if (contratoRenovando) mutRenovar.mutate({ id: contratoRenovando.id, input: formRenovacao });
+                if (contratoRenovando) {
+                  mutRenovar.mutate({
+                    id: contratoRenovando.id,
+                    input: { ...formRenovacao, diaVencimento: Number(formRenovacao.diaVencimento) },
+                  });
+                }
               }}
               disabled={
                 mutRenovar.isPending ||
                 !formRenovacao.dataInicio ||
                 !formRenovacao.dataFim ||
+                diaVencimentoInvalido(formRenovacao.diaVencimento) ||
                 (possuiAditivo && (!formAditivoRenovacao.descricaoAlteracoes || !arquivoAditivoRenovacao))
               }
             >

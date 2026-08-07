@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { sanitizeUsuario } from "../usuarios/usuarios.service";
+import { inicioDeHoje } from "../../utils/data";
 import type { Role } from "../../types/rbac";
 import type { atualizarPerfilSchema, relatarProblemaSchema } from "./me.schema";
 import type { z } from "zod";
@@ -64,10 +65,20 @@ export async function obterContrato(usuarioId: string) {
 
 export async function listarPagamentos(usuarioId: string) {
   const inquilino = await obterInquilinoOuFalhar(usuarioId);
-  await prisma.pagamento.updateMany({
-    where: { contrato: { inquilinoId: inquilino.id }, status: "pendente", dataVencimento: { lt: new Date() } },
-    data: { status: "atrasado" },
-  });
+  const hoje = inicioDeHoje();
+  // Mesmo corte de inicioDeHoje() e mesma reversao bidirecional de
+  // pagamentos.service.ts:atualizarAtrasados - aqui escopado ao inquilino
+  // logado, mas as duas rotinas leem/escrevem a mesma tabela Pagamento.
+  await Promise.all([
+    prisma.pagamento.updateMany({
+      where: { contrato: { inquilinoId: inquilino.id }, status: "pendente", dataVencimento: { lt: hoje } },
+      data: { status: "atrasado" },
+    }),
+    prisma.pagamento.updateMany({
+      where: { contrato: { inquilinoId: inquilino.id }, status: "atrasado", dataVencimento: { gte: hoje } },
+      data: { status: "pendente" },
+    }),
+  ]);
 
   return prisma.pagamento.findMany({
     where: { contrato: { inquilinoId: inquilino.id } },

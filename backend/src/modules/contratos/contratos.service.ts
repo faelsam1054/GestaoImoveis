@@ -497,8 +497,13 @@ export async function renovar(id: string, data: z.infer<typeof renovarContratoSc
 // nao um erro de cadastro a corrigir).
 export async function atualizarValores(id: string, data: z.infer<typeof atualizarValoresContratoSchema>) {
   const contrato = await buscarPorIdOuFalhar(id);
-  if (contrato.status !== "ativo") {
-    throw new AppError("Somente contratos ativos podem ter os valores editados", 409);
+  // Encerrado tambem e permitido: nao ha pagamento pendente/atrasado sobrando
+  // num contrato encerrado (foram cancelados no momento do encerramento - ver
+  // cancelarPagamentosFuturosPendentes), entao editar aqui e so correcao de
+  // dado historico/cadastral, sem risco de afetar cobranca real. Pendente de
+  // aprovacao/rejeitado continuam bloqueados - nao ha valor "real" ainda pra editar.
+  if (contrato.status !== "ativo" && contrato.status !== "encerrado") {
+    throw new AppError("Somente contratos ativos ou encerrados podem ter os valores editados", 409);
   }
 
   const diaVencimentoMudou = data.diaVencimento !== undefined && data.diaVencimento !== contrato.diaVencimento;

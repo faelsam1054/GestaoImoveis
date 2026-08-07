@@ -348,7 +348,7 @@ export function PagamentosPage() {
         }
       />
 
-      <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPagamento)} className="mb-3">
+      <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPagamento)} className="mb-1">
         <TabsList>
           <TabsTrigger value="todos">Todos{contagens.todos !== undefined ? ` (${contagens.todos})` : ""}</TabsTrigger>
           <TabsTrigger value="atrasados">
@@ -357,6 +357,9 @@ export function PagamentosPage() {
           <TabsTrigger value="pagos">Pagos{contagens.pagos !== undefined ? ` (${contagens.pagos})` : ""}</TabsTrigger>
         </TabsList>
       </Tabs>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Considera-se atrasado a partir do dia seguinte ao vencimento.
+      </p>
 
       <div className="mb-4">
         {/* Desktop/tablet: filtros em linha horizontal */}

@@ -297,25 +297,38 @@ própria com:
   o Proprietário/Administrador pode anexar o PDF do contrato fisicamente
   assinado a qualquer momento (distinto do PDF gerado automaticamente pelo
   sistema), substituí-lo ou removê-lo.
-- **Aditivos contratuais**: aba própria para anexar PDFs de aditivo (registrando
-  alterações como reajuste de valor), com descrição e valor anterior/novo;
-  disponível tanto no fluxo de renovação (vinculando ao contrato anterior)
-  quanto avulso em qualquer contrato ativo. Download exige autenticação (ao
-  contrário dos demais PDFs do sistema, servidos como arquivo estático).
+- **Aditivos contratuais aplicam mudanças reais** (`POST /contratos/:id/aditivo`,
+  restrito ao Proprietário): diferente de renovar, **nunca cria um contrato
+  novo** — atualiza valor do aluguel, dia de vencimento e/ou data fim no
+  **mesmo registro** de `Contrato` (permitido em `ativo` ou `encerrado`) e
+  grava um `AditivoContrato` imutável com os valores anteriores e novos de
+  cada campo alterado (motivo obrigatório, data de efetivação editável, PDF
+  opcional). Reaproveita a mesma lógica de `atualizarValores()` para
+  valor/dia (clamp de dia, propagação para `Pagamento` pendente/atrasado -
+  checkboxes "Atualizar pagamentos pendentes"/"Aplicar aos pagamentos futuros
+  já gerados", só exibidos em contrato `ativo`, já que um `encerrado` não tem
+  pendência pra afetar). Excluir um aditivo remove só o registro histórico -
+  não reverte a mudança já aplicada no contrato (é um log de auditoria, não
+  uma transação reversível). A aba "Aditivos" no detalhe do contrato mostra
+  o histórico completo, em ordem cronológica; o PDF do contrato original
+  continua na aba "Detalhes", cada aditivo tem o seu próprio PDF (opcional)
+  na aba "Aditivos". Como aditivo nunca cria uma linha de `Contrato` nova, a
+  listagem geral de contratos nunca ganha uma linha extra por causa disso.
+  No fluxo de renovação (que já cria um contrato novo, com o valor já
+  definido na criação), o aditivo opcional anexado é só um registro histórico
+  (motivo + PDF + valores anterior/novo informados manualmente) - não
+  reaplica nada, já que o valor novo já foi definido pelo próprio `renovar()`.
+  Download do PDF de aditivo exige autenticação (ao contrário dos demais PDFs
+  do sistema, servidos como arquivo estático).
 - **Aprovação** (ver seção acima) e **exclusão definitiva**, só permitida sem
   pagamentos/parcelas de caução vinculados — na prática, restrita a contratos
   pendentes ou rejeitados.
-- **Edição de valor do aluguel e dia de vencimento** (`PATCH /contratos/:id/valores`),
-  restrita ao Proprietário e só em contratos `ativo` — diferente de renovar,
-  não cria um novo contrato. Opcionalmente (checkbox "Aplicar aos pagamentos
-  futuros já gerados", desmarcado por padrão) o novo valor do aluguel também é
-  aplicado aos `Pagamento` tipo `aluguel` que ainda estão `pendente` e vencem
-  a partir de hoje; pagamentos já pagos, atrasados ou cancelados nunca são
-  alterados por essa via. Existe também `POST /contratos/:id/atualizar-pagamentos`
-  (Proprietário, `{ mesInicio: "YYYY-MM" }`) para reaplicar o valor atual do
-  contrato retroativamente a partir de uma competência, cobrindo também
-  pagamentos já `atrasado` — pensado para corrigir lotes que ficaram com o
-  valor errado, sem UI dedicada ainda.
+- `PATCH /contratos/:id/valores` (a mesma lógica de valor/dia usada pelos
+  aditivos) e `POST /contratos/:id/atualizar-pagamentos` (reaplica o valor
+  atual do contrato retroativamente a partir de uma competência, cobrindo
+  também `atrasado`) continuam existindo como endpoints, mas sem UI dedicada
+  própria - editar valor/dia/data fim pela interface é sempre via aditivo,
+  para nunca perder o histórico.
 
 **Atualização de vencimento**: quando `diaVencimento` muda de valor em
 `PATCH /contratos/:id/valores`, o novo dia é propagado para a
@@ -344,8 +357,17 @@ adiado para o futuro. `POST /pagamentos/recalcular-status` (Proprietário)
 expõe isso manualmente (botão "Recalcular Status" no menu Pagamentos). Não há
 cron job: a app roda em funções serverless (Vercel), onde um agendador
 `node-cron` em processo não persiste entre invocações; o recálculo lazy já
-cobre o caso de uso a cada carregamento de tela. O mesmo recálculo
-bidirecional foi aplicado a `CaucaoParcela` em `caucao.service.ts`.
+cobre o caso de uso a cada carregamento de tela.
+
+**"Atrasado" só a partir do dia seguinte ao vencimento** (`inicioDeHoje()` em
+`utils/data.ts`): o corte usa meia-noite local, não o instante atual — comparar
+contra `new Date()` fazia um pagamento marcar `atrasado` a partir da própria
+meia-noite do dia do vencimento (ainda "hoje"). Um pagamento que vence hoje
+permanece `pendente` até o fim do dia; só vira `atrasado` a partir de amanhã.
+O mesmo recálculo bidirecional com esse corte foi aplicado a `CaucaoParcela`
+(`caucao.service.ts`), `PagamentoAdministrador` (`pagamentos-admin.service.ts`)
+e à listagem de pagamentos do próprio Inquilino (`me.service.ts`) — as 4
+implementações independentes tinham o mesmo bug.
 
 ### Manutenção
 

@@ -121,12 +121,15 @@ export interface Contrato {
 export interface AditivoContrato {
   id: string;
   contratoId: string;
-  contratoAnteriorId: string | null;
   descricaoAlteracoes: string;
-  arquivoPdfUrl: string;
+  arquivoPdfUrl: string | null;
   dataAditivo: string;
-  valorAnterior: number | null;
-  valorNovo: number | null;
+  valorAluguelAnterior: number | null;
+  valorAluguelNovo: number | null;
+  diaVencimentoAnterior: number | null;
+  diaVencimentoNovo: number | null;
+  dataFimAnterior: string | null;
+  dataFimNovo: string | null;
   criadoPorId: string;
   criadoPor?: { nome: string; email: string };
   createdAt: string;

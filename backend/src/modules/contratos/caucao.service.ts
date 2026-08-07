@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { gerarReciboPdf } from "../../services/pdf/recibo.pdf";
+import { inicioDeHoje } from "../../utils/data";
 import type { pagarParcelaCaucaoSchema, atualizarParcelasCaucaoSchema } from "./caucao.schema";
 import type { CaucaoParcela } from "@prisma/client";
 import type { z } from "zod";
@@ -8,13 +9,14 @@ import type { z } from "zod";
 // Bidirecional, mesmo motivo de pagamentos.service.ts:atualizarAtrasados -
 // tambem reverte atrasado->pendente se o vencimento da parcela for adiado.
 async function atualizarAtrasadas() {
+  const hoje = inicioDeHoje();
   await Promise.all([
     prisma.caucaoParcela.updateMany({
-      where: { status: "pendente", dataVencimento: { lt: new Date() } },
+      where: { status: "pendente", dataVencimento: { lt: hoje } },
       data: { status: "atrasado" },
     }),
     prisma.caucaoParcela.updateMany({
-      where: { status: "atrasado", dataVencimento: { gte: new Date() } },
+      where: { status: "atrasado", dataVencimento: { gte: hoje } },
       data: { status: "pendente" },
     }),
   ]);

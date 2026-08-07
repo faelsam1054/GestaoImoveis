@@ -227,10 +227,13 @@ export const excluir = asyncHandler(async (req, res) => {
 export const criarAditivo = asyncHandler(async (req, res) => {
   const existente = await service.buscarPorIdOuFalhar(paramId(req));
   await garantirAcesso(req, existente.imovelId);
-  if (!req.file) throw new AppError("Nenhum arquivo enviado", 400);
   const data = criarAditivoSchema.parse(req.body);
-  const { url } = await enviarArquivo("aditivos", req.file.buffer, req.file.originalname, req.file.mimetype);
-  const aditivo = await aditivosService.criar(paramId(req), data, url, req.user!.id);
+  let arquivoUrl: string | undefined;
+  if (req.file) {
+    const { url } = await enviarArquivo("aditivos", req.file.buffer, req.file.originalname, req.file.mimetype);
+    arquivoUrl = url;
+  }
+  const aditivo = await aditivosService.criar(paramId(req), data, arquivoUrl, req.user!.id);
   await registrarAuditoria({
     usuarioId: req.user!.id,
     acao: "CREATE_ADITIVO_CONTRATO",

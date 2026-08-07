@@ -220,32 +220,40 @@ model Contrato {
 
   pagamentos     Pagamento[]
   caucaoParcelas CaucaoParcela[]
-  aditivos             AditivoContrato[] @relation("AditivoDoContrato")
-  aditivosComoAnterior AditivoContrato[] @relation("AditivoContratoAnterior")
+  aditivos       AditivoContrato[] @relation("AditivoDoContrato")
 
   @@index([imovelId])
   @@index([inquilinoId])
   @@index([status])
 }
 
-// Documento anexado a um contrato registrando as mudancas de uma renovacao
-// (ou, fora do fluxo de renovacao, qualquer alteracao contratual pontual).
-// contratoAnteriorId so e preenchido quando o aditivo nasce durante uma
-// renovacao (ver contratos.service.ts: renovar()); fora desse fluxo, o
-// aditivo e anexado direto a um contrato ativo e fica null.
+// Registro historico de uma alteracao contratual pontual (reajuste de valor,
+// mudanca de dia de vencimento, prorrogacao de data fim) OU um documento
+// anexado a titulo de registro. Aplicado sempre no MESMO Contrato (nunca cria
+// um contrato novo - isso e renovar(), feature separada). Cada campo "Anterior"
+// so e preenchido quando aquele campo especifico foi alterado por este aditivo;
+// os que nao mudaram ficam null. Imutavel apos criado (nao ha update, so create).
 model AditivoContrato {
   id         String @id @default(cuid())
   contratoId String
   contrato   Contrato @relation("AditivoDoContrato", fields: [contratoId], references: [id])
 
-  contratoAnteriorId String?
-  contratoAnterior   Contrato? @relation("AditivoContratoAnterior", fields: [contratoAnteriorId], references: [id])
-
+  // Motivo/descricao do aditivo (obrigatorio mesmo quando nao muda nenhum
+  // campo estruturado - todo aditivo precisa de uma justificativa registrada).
   descricaoAlteracoes String
-  arquivoPdfUrl        String
-  dataAditivo          DateTime @default(now())
-  valorAnterior        Float?
-  valorNovo            Float?
+  // Serve tambem como "data de efetivacao" das mudancas - editavel no
+  // formulario (default hoje), distinto de createdAt (timestamp imutavel da
+  // insercao no banco).
+  dataAditivo DateTime @default(now())
+
+  arquivoPdfUrl String? // opcional - nem todo aditivo tem PDF anexado
+
+  valorAluguelAnterior  Float?
+  valorAluguelNovo      Float?
+  diaVencimentoAnterior Int?
+  diaVencimentoNovo     Int?
+  dataFimAnterior       DateTime?
+  dataFimNovo           DateTime?
 
   criadoPorId String
   criadoPor   Usuario @relation(fields: [criadoPorId], references: [id])

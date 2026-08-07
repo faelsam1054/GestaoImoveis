@@ -47,12 +47,7 @@ router.delete("/:id/contrato-assinado", authorizePermissao("podeEditarContratos"
 router.delete("/:id", authorizePermissao("podeEditarContratos"), controller.excluir);
 
 router.get("/:id/aditivos", authorizePermissao("podeVerContratos"), controller.listarAditivos);
-router.post(
-  "/:id/aditivo",
-  authorizePermissao("podeEditarContratos"),
-  uploadAditivo.single("arquivo"),
-  controller.criarAditivo,
-);
+router.post("/:id/aditivo", requireRole("proprietario"), uploadAditivo.single("arquivo"), controller.criarAditivo);
 
 router.get("/:id/caucao", authorizePermissao("podeVerContratos"), caucaoController.listar);
 router.post("/:id/caucao/:parcelaId/pagar", authorizePermissao("podeEditarContratos"), caucaoController.pagar);

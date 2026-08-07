@@ -3,6 +3,7 @@ import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { gerarReciboPdf } from "../../services/pdf/recibo.pdf";
 import { removerArquivo } from "../../lib/storage";
+import { inicioDeHoje } from "../../utils/data";
 import type {
   criarPagamentoAvulsoSchema,
   atualizarPagamentoSchema,
@@ -42,14 +43,18 @@ const includePadrao = {
 // reverte atrasado cujo vencimento foi prorrogado para o futuro de volta
 // para pendente (ex: proprietario mudou o dia de vencimento do contrato -
 // ver atualizarValores em contratos.service.ts). Pago/cancelado nunca mudam.
+// Corte e inicioDeHoje() (meia-noite), nao o instante atual: um pagamento so
+// conta como atrasado a partir do dia SEGUINTE ao vencimento - no proprio
+// dia do vencimento ele continua "pendente".
 export async function atualizarAtrasados() {
+  const hoje = inicioDeHoje();
   const [paraAtrasado, paraPendente] = await Promise.all([
     prisma.pagamento.updateMany({
-      where: { status: "pendente", dataVencimento: { lt: new Date() } },
+      where: { status: "pendente", dataVencimento: { lt: hoje } },
       data: { status: "atrasado" },
     }),
     prisma.pagamento.updateMany({
-      where: { status: "atrasado", dataVencimento: { gte: new Date() } },
+      where: { status: "atrasado", dataVencimento: { gte: hoje } },
       data: { status: "pendente" },
     }),
   ]);

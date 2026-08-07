@@ -153,6 +153,9 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Pagamentos atrasados</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Considera-se atrasado a partir do dia seguinte ao vencimento.
+            </p>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="flex flex-col gap-3">

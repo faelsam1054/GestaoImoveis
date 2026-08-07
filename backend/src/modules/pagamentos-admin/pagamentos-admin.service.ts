@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../utils/AppError";
 import { parsePaginacao, paginar } from "../../utils/pagination";
 import { PERCENTUAL_MENSALIDADE_ADMIN } from "../../constants/dominio";
+import { inicioDeHoje } from "../../utils/data";
 import type { marcarPagoAdminSchema } from "./pagamentos-admin.schema";
 import type { z } from "zod";
 import type { Prisma } from "@prisma/client";
@@ -20,11 +21,20 @@ const includePadrao = {
 // excluido e status != inativo. So esses contam para a mensalidade.
 const imovelAtivoEVisivel = { excluidoEm: null, status: { not: "inativo" } } as const;
 
+// Mesmo corte de inicioDeHoje() (nao instante atual) e mesma reversao
+// bidirecional de pagamentos.service.ts:atualizarAtrasados.
 async function atualizarAtrasados() {
-  await prisma.pagamentoAdministrador.updateMany({
-    where: { status: "aguardando_pagamento", dataVencimento: { lt: new Date() } },
-    data: { status: "atrasado" },
-  });
+  const hoje = inicioDeHoje();
+  await Promise.all([
+    prisma.pagamentoAdministrador.updateMany({
+      where: { status: "aguardando_pagamento", dataVencimento: { lt: hoje } },
+      data: { status: "atrasado" },
+    }),
+    prisma.pagamentoAdministrador.updateMany({
+      where: { status: "atrasado", dataVencimento: { gte: hoje } },
+      data: { status: "aguardando_pagamento" },
+    }),
+  ]);
 }
 
 export async function listar(filtros: FiltrosPagamentoAdmin) {

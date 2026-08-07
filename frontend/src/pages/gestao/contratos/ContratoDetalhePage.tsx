@@ -2,19 +2,13 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack, Pencil } from "lucide-react";
-import {
-  detalharContrato,
-  enviarContratoAssinado,
-  removerContratoAssinado,
-  atualizarValoresContrato,
-  type AtualizarValoresContratoInput,
-} from "@/api/contratos";
+import { ArrowLeft, FileUp, Trash2, Download, Paperclip, FileStack } from "lucide-react";
+import { detalharContrato, enviarContratoAssinado, removerContratoAssinado } from "@/api/contratos";
 import { listarParcelasCaucao, pagarParcelaCaucao, type PagarParcelaCaucaoInput } from "@/api/caucao";
-import { listarAditivos, criarAditivo, excluirAditivo, baixarAditivo } from "@/api/aditivos";
+import { listarAditivos, criarAditivo, excluirAditivo, baixarAditivo, type AditivoInput } from "@/api/aditivos";
 import { useAuth } from "@/contexts/AuthContext";
 import { FORMA_PAGAMENTO_CAUCAO, type CaucaoParcela, type AditivoContrato } from "@/types/domain";
-import { formatarData, formatarMoeda } from "@/lib/format";
+import { formatarData, formatarMoeda, hojeInputData, paraInputData } from "@/lib/format";
 import { mensagemErro } from "@/lib/api-client";
 import { StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -38,13 +32,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// Sempre retorna um inteiro entre 1 e 31 - evita NaN (campo vazio), valores
-// fora do intervalo e outros estados intermediarios invalidos enquanto o
-// usuario digita.
-function parseDiaVencimento(valor: string): number {
-  const numero = Math.trunc(Number(valor));
-  if (!Number.isFinite(numero)) return 1;
-  return Math.min(31, Math.max(1, numero));
+// Estado local do campo permite "" (vazio) enquanto o usuario digita - ver
+// mesma explicacao em ContratosPage.tsx: clampar a cada tecla impede digitar
+// qualquer numero de 2 digitos. Validacao de intervalo so no submit.
+interface FormAditivo {
+  descricaoAlteracoes: string;
+  dataAditivo: string;
+  valorAluguelNovo: number;
+  diaVencimentoNovo: number | "";
+  dataFimNova: string;
+  atualizarPagamentosFuturos: boolean;
+  atualizarDataVencimentoPendentes: boolean;
+}
+
+function diaVencimentoInvalido(valor: number | ""): boolean {
+  return valor === "" || valor < 1 || valor > 31;
 }
 
 export function ContratoDetalhePage() {
@@ -63,21 +65,16 @@ export function ContratoDetalhePage() {
   const [erro, setErro] = useState<string | null>(null);
   const [removendoContrato, setRemovendoContrato] = useState(false);
 
-  const [editandoValores, setEditandoValores] = useState(false);
-  const [formValores, setFormValores] = useState<AtualizarValoresContratoInput>({
-    valorAluguel: 0,
-    diaVencimento: 5,
-    atualizarPagamentosFuturos: false,
-    atualizarDataVencimentoPendentes: true,
-  });
-  const [erroValores, setErroValores] = useState<string | null>(null);
-
   const inputAditivoRef = useRef<HTMLInputElement>(null);
   const [aditivoDialogAberto, setAditivoDialogAberto] = useState(false);
-  const [formAditivo, setFormAditivo] = useState({
+  const [formAditivo, setFormAditivo] = useState<FormAditivo>({
     descricaoAlteracoes: "",
-    valorAnterior: undefined as number | undefined,
-    valorNovo: undefined as number | undefined,
+    dataAditivo: hojeInputData(),
+    valorAluguelNovo: 0,
+    diaVencimentoNovo: 5,
+    dataFimNova: "",
+    atualizarPagamentosFuturos: false,
+    atualizarDataVencimentoPendentes: true,
   });
   const [arquivoAditivo, setArquivoAditivo] = useState<File | null>(null);
   const [erroAditivo, setErroAditivo] = useState<string | null>(null);
@@ -134,32 +131,6 @@ export function ContratoDetalhePage() {
     },
   });
 
-  const mutAtualizarValores = useMutation({
-    mutationFn: (input: AtualizarValoresContratoInput) => atualizarValoresContrato(id!, input),
-    onSuccess: async (resultado) => {
-      toast.success(
-        resultado.pagamentosAtualizados > 0
-          ? `Valores atualizados. ${resultado.pagamentosAtualizados} pagamento(s) foram atualizados.`
-          : "Valores atualizados com sucesso.",
-      );
-      await queryClient.invalidateQueries({ queryKey: ["contratos", id] });
-      setEditandoValores(false);
-    },
-    onError: (err) => setErroValores(mensagemErro(err)),
-  });
-
-  function abrirEditarValores() {
-    if (!contrato) return;
-    setFormValores({
-      valorAluguel: contrato.valorAluguel,
-      diaVencimento: contrato.diaVencimento,
-      atualizarPagamentosFuturos: false,
-      atualizarDataVencimentoPendentes: true,
-    });
-    setErroValores(null);
-    setEditandoValores(true);
-  }
-
   const { data: aditivos } = useQuery({
     queryKey: ["contratos", id, "aditivos"],
     queryFn: () => listarAditivos(id!),
@@ -171,10 +142,23 @@ export function ContratoDetalhePage() {
   }
 
   const mutCriarAditivo = useMutation({
-    mutationFn: () => criarAditivo(id!, { ...formAditivo, arquivo: arquivoAditivo! }),
+    mutationFn: () => {
+      const input: AditivoInput = {
+        descricaoAlteracoes: formAditivo.descricaoAlteracoes,
+        dataAditivo: formAditivo.dataAditivo,
+        valorAluguelNovo: formAditivo.valorAluguelNovo,
+        diaVencimentoNovo: Number(formAditivo.diaVencimentoNovo),
+        dataFimNova: formAditivo.dataFimNova,
+        atualizarPagamentosFuturos: formAditivo.atualizarPagamentosFuturos,
+        atualizarDataVencimentoPendentes: formAditivo.atualizarDataVencimentoPendentes,
+        arquivo: arquivoAditivo ?? undefined,
+      };
+      return criarAditivo(id!, input);
+    },
     onSuccess: async () => {
-      toast.success("Aditivo anexado.");
+      toast.success("Aditivo registrado e aplicado ao contrato.");
       await invalidarAditivos();
+      await queryClient.invalidateQueries({ queryKey: ["contratos", id] });
       setAditivoDialogAberto(false);
     },
     onError: (err) => setErroAditivo(mensagemErro(err)),
@@ -202,7 +186,16 @@ export function ContratoDetalhePage() {
   }
 
   function abrirNovoAditivo() {
-    setFormAditivo({ descricaoAlteracoes: "", valorAnterior: undefined, valorNovo: undefined });
+    if (!contrato) return;
+    setFormAditivo({
+      descricaoAlteracoes: "",
+      dataAditivo: hojeInputData(),
+      valorAluguelNovo: contrato.valorAluguel,
+      diaVencimentoNovo: contrato.diaVencimento,
+      dataFimNova: paraInputData(contrato.dataFim),
+      atualizarPagamentosFuturos: false,
+      atualizarDataVencimentoPendentes: true,
+    });
     setArquivoAditivo(null);
     setErroAditivo(null);
     setAditivoDialogAberto(true);
@@ -248,11 +241,10 @@ export function ContratoDetalhePage() {
         <TabsContent value="detalhes" className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-muted-foreground">Valores do Contrato</h3>
-        {ehProprietario && contrato.status === "ativo" && (
-          <Button variant="outline" size="sm" onClick={abrirEditarValores}>
-            <Pencil className="h-4 w-4" />
-            Editar Valores
-          </Button>
+        {ehProprietario && (
+          <p className="text-xs text-muted-foreground">
+            Para alterar valor, dia de vencimento ou data fim, use "Adicionar Aditivo" na aba Aditivos.
+          </p>
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -454,7 +446,7 @@ export function ContratoDetalhePage() {
 
         <TabsContent value="aditivos" className="flex flex-col gap-4">
           <div className="flex justify-end">
-            {podeEditar && contrato.status === "ativo" && (
+            {ehProprietario && (contrato.status === "ativo" || contrato.status === "encerrado") && (
               <Button size="sm" onClick={abrirNovoAditivo}>
                 <Paperclip className="h-4 w-4" />
                 Adicionar Aditivo
@@ -476,8 +468,10 @@ export function ContratoDetalhePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Data</TableHead>
-                    <TableHead>Descrição</TableHead>
-                    <TableHead>Valor anterior → novo</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Vencimento</TableHead>
+                    <TableHead>Data fim</TableHead>
                     <TableHead>Criado por</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -488,17 +482,29 @@ export function ContratoDetalhePage() {
                       <TableCell>{formatarData(aditivo.dataAditivo)}</TableCell>
                       <TableCell className="max-w-xs truncate">{aditivo.descricaoAlteracoes}</TableCell>
                       <TableCell>
-                        {aditivo.valorAnterior !== null && aditivo.valorNovo !== null
-                          ? `${formatarMoeda(aditivo.valorAnterior)} → ${formatarMoeda(aditivo.valorNovo)}`
+                        {aditivo.valorAluguelAnterior !== null && aditivo.valorAluguelNovo !== null
+                          ? `${formatarMoeda(aditivo.valorAluguelAnterior)} → ${formatarMoeda(aditivo.valorAluguelNovo)}`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {aditivo.diaVencimentoAnterior !== null && aditivo.diaVencimentoNovo !== null
+                          ? `dia ${aditivo.diaVencimentoAnterior} → dia ${aditivo.diaVencimentoNovo}`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {aditivo.dataFimAnterior !== null && aditivo.dataFimNovo !== null
+                          ? `${formatarData(aditivo.dataFimAnterior)} → ${formatarData(aditivo.dataFimNovo)}`
                           : "-"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{aditivo.criadoPor?.nome ?? "-"}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => baixar(aditivo)}>
-                          <Download className="h-4 w-4" />
-                          Baixar
-                        </Button>
-                        {podeEditar && (
+                        {aditivo.arquivoPdfUrl && (
+                          <Button variant="ghost" size="sm" onClick={() => baixar(aditivo)}>
+                            <Download className="h-4 w-4" />
+                            Baixar
+                          </Button>
+                        )}
+                        {ehProprietario && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -586,86 +592,6 @@ export function ContratoDetalhePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Editar valores do contrato */}
-      <Dialog open={editandoValores} onOpenChange={setEditandoValores}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Editar Valores do Contrato</DialogTitle>
-            <DialogDescription>Apenas o Proprietário pode alterar o valor do aluguel e o dia de vencimento.</DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="valorAluguelEdit">Valor do aluguel</Label>
-              <CurrencyInput
-                id="valorAluguelEdit"
-                value={formValores.valorAluguel}
-                onValueChange={(v) => setFormValores({ ...formValores, valorAluguel: v ?? 0 })}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="diaVencimentoEdit">Dia de vencimento</Label>
-              <Input
-                id="diaVencimentoEdit"
-                type="number"
-                min={1}
-                max={31}
-                value={formValores.diaVencimento}
-                onChange={(e) => setFormValores({ ...formValores, diaVencimento: parseDiaVencimento(e.target.value) })}
-              />
-            </div>
-            {formValores.diaVencimento !== undefined && formValores.diaVencimento !== contrato.diaVencimento && (
-              <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                <p>
-                  Esta alteração atualizará a data de vencimento de todos os pagamentos pendentes (incluindo o mês
-                  atual). Pagamentos já pagos não serão alterados.
-                </p>
-                <label className="flex items-start gap-2">
-                  <Checkbox
-                    checked={formValores.atualizarDataVencimentoPendentes}
-                    onCheckedChange={(v) =>
-                      setFormValores({ ...formValores, atualizarDataVencimentoPendentes: v === true })
-                    }
-                  />
-                  <span>Atualizar pagamentos pendentes</span>
-                </label>
-              </div>
-            )}
-            <label className="flex items-start gap-2 text-sm">
-              <Checkbox
-                checked={formValores.atualizarPagamentosFuturos}
-                onCheckedChange={(v) =>
-                  setFormValores({ ...formValores, atualizarPagamentosFuturos: v === true })
-                }
-              />
-              <span>
-                Aplicar o novo valor do aluguel aos pagamentos futuros já gerados (pendentes, a partir de hoje). Pagamentos
-                já pagos, atrasados ou cancelados não são alterados.
-              </span>
-            </label>
-            {erroValores && <p className="text-sm text-destructive">{erroValores}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditandoValores(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                setErroValores(null);
-                mutAtualizarValores.mutate(formValores);
-              }}
-              disabled={
-                mutAtualizarValores.isPending ||
-                !formValores.valorAluguel ||
-                formValores.valorAluguel <= 0 ||
-                !formValores.diaVencimento
-              }
-            >
-              {mutAtualizarValores.isPending ? "Salvando..." : "Salvar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <ConfirmDialog
         open={removendoContrato}
         onOpenChange={setRemovendoContrato}
@@ -682,41 +608,113 @@ export function ContratoDetalhePage() {
           <DialogHeader>
             <DialogTitle>Adicionar Aditivo</DialogTitle>
             <DialogDescription>
-              Anexe um PDF registrando uma alteração contratual (ex: novo valor de aluguel).
+              Aplica as mudanças no mesmo contrato (não cria um novo) e mantém o histórico. PDF é opcional.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="descricaoAlteracoes">
-                Descrição das alterações <span className="text-destructive">*</span>
+                Motivo do aditivo <span className="text-destructive">*</span>
               </Label>
               <Textarea
                 id="descricaoAlteracoes"
-                rows={3}
+                rows={2}
                 value={formAditivo.descricaoAlteracoes}
                 onChange={(e) => setFormAditivo({ ...formAditivo, descricaoAlteracoes: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
-                <Label>Valor anterior (opcional)</Label>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="dataEfetivacao">Data de efetivação</Label>
+              <Input
+                id="dataEfetivacao"
+                type="date"
+                value={formAditivo.dataAditivo}
+                onChange={(e) => setFormAditivo({ ...formAditivo, dataAditivo: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-3">
+              <span className="text-xs text-muted-foreground">Valor do aluguel</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{formatarMoeda(contrato.valorAluguel)} →</span>
                 <CurrencyInput
-                  value={formAditivo.valorAnterior}
-                  onValueChange={(v) => setFormAditivo({ ...formAditivo, valorAnterior: v })}
+                  value={formAditivo.valorAluguelNovo}
+                  onValueChange={(v) => setFormAditivo({ ...formAditivo, valorAluguelNovo: v ?? 0 })}
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label>Valor novo (opcional)</Label>
-                <CurrencyInput
-                  value={formAditivo.valorNovo}
-                  onValueChange={(v) => setFormAditivo({ ...formAditivo, valorNovo: v })}
+
+              <span className="text-xs text-muted-foreground">Dia de vencimento</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">dia {contrato.diaVencimento} →</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={31}
+                  placeholder="Dia do mês (1-31)"
+                  value={formAditivo.diaVencimentoNovo}
+                  onChange={(e) =>
+                    setFormAditivo({
+                      ...formAditivo,
+                      diaVencimentoNovo: e.target.value === "" ? "" : Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+
+              <span className="text-xs text-muted-foreground">Data fim</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{formatarData(contrato.dataFim)} →</span>
+                <Input
+                  type="date"
+                  value={formAditivo.dataFimNova}
+                  onChange={(e) => setFormAditivo({ ...formAditivo, dataFimNova: e.target.value })}
                 />
               </div>
             </div>
+            {diaVencimentoInvalido(formAditivo.diaVencimentoNovo) && (
+              <p className="text-xs text-destructive">Informe um dia de vencimento entre 1 e 31.</p>
+            )}
+
+            {contrato.status === "encerrado" && (
+              <p className="text-xs text-muted-foreground">
+                Este contrato está encerrado - a alteração só corrige o cadastro, não afeta nenhum pagamento (todos os
+                pendentes já foram cancelados ao encerrar).
+              </p>
+            )}
+            {contrato.status === "ativo" && formAditivo.diaVencimentoNovo !== contrato.diaVencimento && (
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p>
+                  Esta alteração atualizará a data de vencimento de todos os pagamentos pendentes (incluindo o mês
+                  atual). Pagamentos já pagos não serão alterados.
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={formAditivo.atualizarDataVencimentoPendentes}
+                    onCheckedChange={(v) =>
+                      setFormAditivo({ ...formAditivo, atualizarDataVencimentoPendentes: v === true })
+                    }
+                  />
+                  <span>Atualizar pagamentos pendentes</span>
+                </label>
+              </div>
+            )}
+            {contrato.status === "ativo" && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={formAditivo.atualizarPagamentosFuturos}
+                  onCheckedChange={(v) =>
+                    setFormAditivo({ ...formAditivo, atualizarPagamentosFuturos: v === true })
+                  }
+                />
+                <span>
+                  Aplicar o novo valor do aluguel aos pagamentos futuros já gerados (pendentes, a partir de hoje).
+                  Pagamentos já pagos, atrasados ou cancelados não são alterados.
+                </span>
+              </label>
+            )}
+
             <div className="flex flex-col gap-2">
-              <Label>
-                PDF do aditivo <span className="text-destructive">*</span>
-              </Label>
+              <Label>PDF do aditivo (opcional)</Label>
               <input
                 ref={inputAditivoRef}
                 type="file"
@@ -744,9 +742,16 @@ export function ContratoDetalhePage() {
                 setErroAditivo(null);
                 mutCriarAditivo.mutate();
               }}
-              disabled={mutCriarAditivo.isPending || !formAditivo.descricaoAlteracoes || !arquivoAditivo}
+              disabled={
+                mutCriarAditivo.isPending ||
+                !formAditivo.descricaoAlteracoes ||
+                !formAditivo.dataFimNova ||
+                !formAditivo.valorAluguelNovo ||
+                formAditivo.valorAluguelNovo <= 0 ||
+                diaVencimentoInvalido(formAditivo.diaVencimentoNovo)
+              }
             >
-              {mutCriarAditivo.isPending ? "Enviando..." : "Salvar"}
+              {mutCriarAditivo.isPending ? "Salvando..." : "Salvar Aditivo"}
             </Button>
           </DialogFooter>
         </DialogContent>
